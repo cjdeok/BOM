@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Temporary and Cache files
+,tmp/
+tmp/
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# IDE and Editor files
+.vscode/
+.idea/
+
+# AI Assistant artifacts
+.gemini/
+.cursor/
