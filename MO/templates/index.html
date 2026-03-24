@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>BOM 전개 계산기 (멀티 소스 지원)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --surface: #ffffff;
+            --background: #F3F4F6;
+            --text-main: #111827;
+            --text-muted: #6B7280;
+            --border: #E5E7EB;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1250px;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+            border: 1px solid var(--border);
+            height: fit-content;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+            background-color: white;
+        }
+
+        select:focus, input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .spinner {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .result-area {
+            display: none;
+        }
+
+        .level-section {
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .level-header {
+            background-color: #F9FAFB;
+            padding: 12px 16px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--border);
+            word-break: break-all;
+        }
+
+        th {
+            background-color: #ffffff;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .highlight {
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        .info-banner {
+            background-color: #F5F3FF;
+            color: #4338CA;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            border-left: 4px solid var(--primary);
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Left panel -->
+    <div class="card">
+        <h2>BOM 계산 설정</h2>
+        <div class="info-banner">
+            원하는 수식 마스터 파일을 선택하고 목표 수량을 입력하여 BOM을 전개합니다.
+        </div>
+        
+        <div class="form-group">
+            <label>수식 마스터 파일 선택</label>
+            <select id="formulaFileSelect">
+                <option value="">파일 목록을 불러오는 중...</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>목표 생산량 (Level 0)</label>
+            <input type="number" id="targetQty" placeholder="수량을 입력하세요" min="1" value="1000" />
+        </div>
+
+        <button onclick="calculateBOM()">BOM 전개 및 계산</button>
+    </div>
+
+    <!-- Right panel -->
+    <div class="card" id="rightPanel">
+        <h2>전개 결과 (BOM Tree)</h2>
+        <div id="spinner" class="spinner">
+            데이터를 바탕으로 계산 중입니다...
+        </div>
+        <div id="resultArea" class="result-area">
+            <div id="summaryInfo" style="margin-bottom: 20px; font-weight: 500; color: var(--text-muted);"></div>
+            
+            <div class="level-section">
+                <div class="level-header">Level 1 (포장/완제품) <span id="l1Count"></span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">상위 Lot</th>
+                            <th style="width: 30%;">구성품</th>
+                            <th style="width: 25%;">생산Lot</th>
+                            <th style="width: 15%;">수량</th>
+                            <th style="width: 10%;">단위</th>
+                        </tr>
+                    </thead>
+                    <tbody id="l1Table"></tbody>
+                </table>
+            </div>
+
+            <div class="level-section">
+                <div class="level-header">Level 2 (반제품 제조) <span id="l2Count"></span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">상위 Lot</th>
+                            <th style="width: 30%;">구성품</th>
+                            <th style="width: 25%;">생산Lot</th>
+                            <th style="width: 15%;">수량</th>
+                            <th style="width: 10%;">단위</th>
+                        </tr>
+                    </thead>
+                    <tbody id="l2Table"></tbody>
+                </table>
+            </div>
+
+            <div class="level-section">
+                <div class="level-header">Level 3 (하위 조제) <span id="l3Count"></span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">상위 Lot</th>
+                            <th style="width: 30%;">구성품</th>
+                            <th style="width: 25%;">생산Lot</th>
+                            <th style="width: 15%;">수량</th>
+                            <th style="width: 10%;">단위</th>
+                        </tr>
+                    </thead>
+                    <tbody id="l3Table"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="emptyState" style="text-align: center; color: var(--text-muted); padding: 40px;">
+            수식 파일과 목표 생산량을 설정하고 버튼을 눌러주세요.
+        </div>
+    </div>
+</div>
+
+<script>
+    // Load formula file list
+    fetch('/api/lots')
+        .then(res => res.json())
+        .then(data => {
+            const select = document.getElementById('formulaFileSelect');
+            select.innerHTML = '';
+            
+            if(data && data.length > 0) {
+                data.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.filename;
+                    opt.textContent = item.filename;
+                    // BCE01_BOM_fomula_1.csv를 기본값으로 선택
+                    if(item.filename === 'BCE01_BOM_fomula_1.csv') opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } else {
+                select.innerHTML = '<option value="">가용한 파일 없음</option>';
+            }
+        });
+
+    function calculateBOM() {
+        const formulaFile = document.getElementById('formulaFileSelect').value;
+        const targetQty = document.getElementById('targetQty').value;
+
+        if (!formulaFile) {
+            alert("수식 마스터 파일을 선택해주세요.");
+            return;
+        }
+        if (!targetQty || targetQty <= 0) {
+            alert("유효한 목표 생산량을 입력해주세요.");
+            return;
+        }
+
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('resultArea').style.display = 'none';
+        document.getElementById('spinner').style.display = 'block';
+
+        fetch('/api/generate_bom', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                formula_file: formulaFile,
+                target_qty: targetQty 
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('spinner').style.display = 'none';
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            renderResults(data);
+            document.getElementById('resultArea').style.display = 'block';
+        })
+        .catch(err => {
+            document.getElementById('spinner').style.display = 'none';
+            alert("서버 통신 중 오류가 발생했습니다.");
+            console.error(err);
+        });
+    }
+
+    function renderResults(data) {
+        document.getElementById('summaryInfo').innerText = 
+            `파일 [${data.level0.제품명.replace('전개 소스: ', '')}]을(를) 사용하여 전개한 결과입니다. (목표수량: ${data.level0.목표수량})`;
+
+        const targetCols = ['상위Lot', '명칭 / 구성품', '생산Lot', '계산된_소요량', '단위'];
+
+        renderTable('l1Table', 'l1Count', data.level1, targetCols);
+        renderTable('l2Table', 'l2Count', data.level2, targetCols);
+        renderTable('l3Table', 'l3Count', data.level3, targetCols);
+    }
+
+    function renderTable(tableId, countId, items, cols) {
+        const tbody = document.getElementById(tableId);
+        tbody.innerHTML = '';
+        document.getElementById(countId).innerText = `${items.length} 항목`;
+        
+        items.forEach(item => {
+            let row = '<tr>';
+            cols.forEach(col => {
+                let val = item[col] || '';
+                if(col === '계산된_소요량') {
+                    row += `<td class="highlight">${val}</td>`;
+                } else {
+                    row += `<td>${val}</td>`;
+                }
+            });
+            row += '</tr>';
+            tbody.innerHTML += row;
+        });
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,55 @@
+Level,상위 LOT 연결,명칭 / 구성품,생산LOT,수식 (Formula),단위
+1,생산 Lot,포장박스_공용,EMA021,"target_qty - if(target_qty > 150, 8 , 2)",박스
+1,생산 Lot,용기 고정용 스펀지_2,EMA014,"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Calibrator,CR(04),"target_qty - if(target_qty > 150, 8 , 2)",세트
+1,생산 Lot,Positive Control,PC(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Negative Control,NC(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Detection Antibody,DA(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Reagent Dilution Buffer,RD(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Washing Solution(20×),WS(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,TMB Solution,TM(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Stop Solution,SS(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Uncoated Plate (Plate-A),EMA013,"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,Antibody Coated 96-well Plate (Plate-B),PL(04),"target_qty - if(target_qty > 150, 8 , 2)",개
+1,생산 Lot,사용자 설명서,,"target_qty - if(target_qty > 150, 8 , 2)",장
+2,CR(04),"10,000U/㎖ hTrx1",BCM004,"ROUNDUP(((target_qty * 0.35 + 1.5) * 2) / 7, 0)",개
+2,CR(04),PBSA Buffer,PB(04),"ROUNDUP((7.188*(ROUNDUP(((target_qty*0.35+1.5)*2)/7,0)))+((((2.8+4.2)*(ROUNDUP(((target_qty*0.35+1.5)*2)/7,0)))/2)*4)+(target_qty*0.35+1),0)",㎖
+2,CR(04),2ml Tube_Lock,EMA020,target_qty * 6,개
+2,PC(04),"1,000U/㎖ hTrx1",BCM005,"ROUNDUP(((ROUNDUP((target_qty * 0.35 + 1.5), 0)) * 0.025) / 0.14, 0)",개
+2,PC(04),PBSA Buffer,PB(04),"ROUNDUP((target_qty*0.35)+1.5,0)",㎖
+2,PC(04),2ml Tube_Lock,EMA020,target_qty,개
+2,NC(04),"1,000U/㎖ hTrx1",BCM005,,개
+2,NC(04),PBSA Buffer,PB(04),"ROUNDUP((target_qty*0.35)+1.5,0)",㎖
+2,NC(04),2ml Tube_Lock,EMA020,target_qty,개
+2,DA(04),Ab-Trx1-2(Ab2),BCM003,"ROUNDUP((target_qty * 0.25 + 2) / 70, 0)",개
+2,DA(04),HRP-IgG Conjugation Kit,CMA015,"ROUNDUP((target_qty*0.25+2)/70,0)",회분
+2,DA(04),D.W.,CMA006,"ROUNDUP((target_qty*0.25+2)/70,0)",㎖
+2,DA(04),PBSA Buffer,PB(04),"ROUNDUP((ROUNDUP(target_qty*25+200,-2))+(((ROUNDUP(target_qty*25+200,-2))/10)+50),-3)/1000",㎖
+2,DA(04),2ml Tube_Lock,EMA020,target_qty,개
+2,PL(04),Ab-Trx1,BCM002,"ROUNDUP((target_qty * 10 + 30) / 100, 0)",개
+2,PL(04),Coating Buffer,CB(04),target_qty*10+30,㎖
+2,PL(04),ELISA Plate,EMA001,target_qty,개
+2,PL(04),Washing Buffer (20×),WB(04),target_qty*3+20,㎖
+2,PL(04),D.W.,CMA006,(target_qty*3+20) * 19,㎖
+2,PL(04),PBSA Buffer,PB(04),"20*target_qty+IF(target_qty<=12,30,60)",㎖
+2,PL(04),Trehalose,CMA017,"ROUNDUP(((20*target_qty+60)*378.33*0.1)/1000,2)",g
+2,PL(04),실리카 젤 (Silica Gel),EMA008,target_qty,개
+2,PL(04),알루미늄 지퍼백,EMA009,target_qty,개
+2,PL(04),플레이트 커버,EMA012,target_qty,개
+2,RD(04),PBSA Buffer,PB(04),target_qty*15+30,㎖
+2,RD(04),30㎖ Bottle,EMA007,target_qty,개
+2,WS(04),Washing Buffer(20×),WB(04),target_qty*25+30,㎖
+2,WS(04),30㎖ Bottle,EMA007,target_qty,개
+2,TM(04),TMB,CMA014,target_qty*13+20,㎖
+2,TM(04),15㎖ Amber Bottle,EMA006,target_qty,개
+2,SS(04),Sulfuric Acid(H2SO4),CMA012,"ROUNDUP((target_qty*13+50)/18,0)",㎖
+2,SS(04),D.W.,CMA006,"ROUNDUP((target_qty*13+50)/18,0)*17",㎖
+2,SS(04),15㎖ Bottle,EMA005,target_qty,개
+3,CB(04),Sodium Carbonate(Na2CO3),CMA007,"ROUNDUP((target_qty*10+30)/1000,0) * 1.59",g
+3,CB(04),Sodium Bicarbonate(NaHCO3),CMA008,"ROUNDUP((target_qty*10+30)/1000,0) * 2.93",g
+3,CB(04),Sodium Azide(NaN3),CMA009,"ROUNDUP((target_qty*10+30)/1000,0) * 0.2",g
+3,CB(04),D.W.,CMA006,"ROUNDUP((target_qty*10+30)/1000,0) * 1000",㎖
+3,PB(04),PBSA,CMA003,"ROUNDUP(20*target_qty+IF(target_qty<=12,30,60) + ROUNDUP((7.188*(ROUNDUP(((target_qty*0.3+1.5)*2)/7,0)))+((((2.8+4.2)*(ROUNDUP(((target_qty*0.3+1.5)*2)/7,0)))/2)*4)+(target_qty*0.3+1),0) +ROUNDUP((target_qty*0.3)+1,0) + ROUNDUP((target_qty*0.3)+1,0) + ROUNDUP((ROUNDUP(target_qty*25+200,-2))+(((ROUNDUP(target_qty*25+200,-2))/10)+50),-3)/1000 + target_qty*15+30, -3)/1000",개
+3,PB(04),D.W.,CMA006,"ROUNDUP(20*target_qty+IF(target_qty<=12,30,60) + ROUNDUP((7.188*(ROUNDUP(((target_qty*0.3+1.5)*2)/7,0)))+((((2.8+4.2)*(ROUNDUP(((target_qty*0.3+1.5)*2)/7,0)))/2)*4)+(target_qty*0.3+1),0) +ROUNDUP((target_qty*0.3)+1,0) + ROUNDUP((target_qty*0.3)+1,0) + ROUNDUP((ROUNDUP(target_qty*25+200,-2))+(((ROUNDUP(target_qty*25+200,-2))/10)+50),-3)/1000 + target_qty*15+30, -3)",㎖
+3,WB(04),PBST,CMA004,"ROUNDUP((target_qty*3+20)+(target_qty*25+30),-2) / 50",개
+3,WB(04),D.W.,CMA006,"ROUNDUP((target_qty*3+20)+(target_qty*25+30),-2)",㎖
