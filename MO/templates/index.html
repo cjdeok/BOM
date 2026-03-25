@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>BOM 전개 계산기 (멀티 소스 지원)</title>
+    <title>BOM 전개 계산기</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -33,26 +33,26 @@
 
         .container {
             width: 100%;
-            max-width: 1250px;
+            max-width: 1400px;
             display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 30px;
+            grid-template-columns: 320px 1fr;
+            gap: 25px;
         }
 
         .card {
             background: var(--surface);
             border-radius: 12px;
             padding: 24px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
             border: 1px solid var(--border);
             height: fit-content;
         }
 
         h2 {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 600;
             margin-bottom: 20px;
-            padding-bottom: 12px;
+            padding-bottom: 10px;
             border-bottom: 1px solid var(--border);
         }
 
@@ -63,25 +63,25 @@
         label {
             display: block;
             margin-bottom: 6px;
-            font-size: 0.875rem;
+            font-size: 0.85rem;
             font-weight: 500;
             color: var(--text-muted);
         }
 
-        select, input {
+        select, input[type="number"], input[type="text"] {
             width: 100%;
-            padding: 10px 12px;
+            padding: 9px 12px;
             border-radius: 6px;
             border: 1px solid var(--border);
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             outline: none;
             transition: border-color 0.2s;
-            background-color: white;
         }
 
-        select:focus, input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        input.lot-input {
+            padding: 5px 8px;
+            border: 1px solid #d1d5db;
+            background-color: #fffbeb; /* 입력 가능함을 나타내는 연한 배경색 */
         }
 
         button {
@@ -91,16 +91,10 @@
             color: white;
             border: none;
             border-radius: 6px;
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
             margin-top: 10px;
-        }
-
-        button:hover {
-            background-color: var(--primary-hover);
-            transform: translateY(-1px);
         }
 
         .spinner {
@@ -108,7 +102,6 @@
             text-align: center;
             padding: 40px;
             color: var(--text-muted);
-            font-weight: 500;
         }
 
         .result-area {
@@ -116,53 +109,81 @@
         }
 
         .level-section {
-            margin-bottom: 24px;
+            margin-bottom: 30px;
             border: 1px solid var(--border);
             border-radius: 8px;
             overflow: hidden;
+            background: white;
         }
 
         .level-header {
             background-color: #F9FAFB;
-            padding: 12px 16px;
+            padding: 10px 16px;
             font-weight: 600;
+            font-size: 0.95rem;
             border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
+            align-items: center;
+        }
+
+        .level-0-info {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            padding: 15px 16px;
+            background-color: #EEF2FF;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .unit-small {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-left: 3px;
+        }
+
+        .info-item span {
+            display: block;
+            font-size: 0.75rem;
+            color: #6366F1;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .info-item div {
+            font-weight: 700;
+            font-size: 1rem;
+            display: flex;
+            align-items: baseline;
+            flex-wrap: nowrap;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
         }
 
         th, td {
-            padding: 12px 16px;
+            padding: 10px 12px;
             text-align: left;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             border-bottom: 1px solid var(--border);
-            word-break: break-all;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         th {
-            background-color: #ffffff;
-            font-weight: 500;
-            color: var(--text-muted);
+            background-color: #fcfcfc;
+            font-weight: 600;
+            color: #4B5563;
         }
 
         .highlight {
             color: var(--primary);
             font-weight: 700;
-        }
-
-        .info-banner {
-            background-color: #F5F3FF;
-            color: #4338CA;
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-            border-left: 4px solid var(--primary);
         }
 
         @media (max-width: 1024px) {
@@ -175,126 +196,119 @@
 <body>
 
 <div class="container">
-    <!-- Left panel -->
     <div class="card">
         <h2>BOM 계산 설정</h2>
-        <div class="info-banner">
-            원하는 수식 마스터 파일을 선택하고 목표 수량을 입력하여 BOM을 전개합니다.
-        </div>
-        
         <div class="form-group">
             <label>수식 마스터 파일 선택</label>
-            <select id="formulaFileSelect">
-                <option value="">파일 목록을 불러오는 중...</option>
-            </select>
+            <select id="formulaFileSelect"></select>
         </div>
 
         <div class="form-group">
-            <label>목표 생산량 (Level 0)</label>
-            <input type="number" id="targetQty" placeholder="수량을 입력하세요" min="1" value="1000" />
+            <label>생산량</label>
+            <input type="number" id="targetQty" value="1000" />
+        </div>
+
+        <div class="form-group">
+            <label>Lot No.</label>
+            <input type="text" id="topLotNo" placeholder="예: LOT20260325" />
+        </div>
+
+        <div class="form-group">
+            <label>제조일자</label>
+            <input type="text" id="mfgDate" placeholder="예: 2026-03-25" />
+        </div>
+
+        <div class="form-group">
+            <label>의뢰팀</label>
+            <input type="text" id="requestTeam" placeholder="예: 생산1팀" />
+        </div>
+
+        <div class="form-group">
+            <label>생산목적</label>
+            <input type="text" id="purpose" placeholder="예: 정기 생산" />
         </div>
 
         <button onclick="calculateBOM()">BOM 전개 및 계산</button>
     </div>
 
-    <!-- Right panel -->
     <div class="card" id="rightPanel">
-        <h2>전개 결과 (BOM Tree)</h2>
-        <div id="spinner" class="spinner">
-            데이터를 바탕으로 계산 중입니다...
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border);">
+            <h2 style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">전개 결과 (BOM Tree)</h2>
+            <button id="downloadBtn" onclick="downloadExcel()" style="width: auto; padding: 6px 15px; font-size: 0.85rem; margin-top: 0; background-color: #10B981; display: none;">엑셀 다운로드</button>
         </div>
+        <div id="spinner" class="spinner">계산 중...</div>
+        
         <div id="resultArea" class="result-area">
-            <div id="summaryInfo" style="margin-bottom: 20px; font-weight: 500; color: var(--text-muted);"></div>
-            
-            <div class="level-section">
-                <div class="level-header">Level 1 (포장/완제품) <span id="l1Count"></span></div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 20%;">상위 Lot</th>
-                            <th style="width: 30%;">구성품</th>
-                            <th style="width: 25%;">생산Lot</th>
-                            <th style="width: 15%;">수량</th>
-                            <th style="width: 10%;">단위</th>
-                        </tr>
-                    </thead>
-                    <tbody id="l1Table"></tbody>
-                </table>
+            <!-- Level 0 Section -->
+            <div class="level-section" style="border: 2px solid #6366F1;">
+                <div class="level-header" style="background-color: #6366F1; color: white;">
+                    Level 0 (최상위 제품 및 생산 정보)
+                </div>
+                <!-- 1st Row: Product Info -->
+                <div class="level-0-info" id="level0Display" style="border-bottom: 1px solid #c7d2fe;">
+                    <!-- Dynamic Content -->
+                </div>
+                <!-- 2nd Row: Production Info -->
+                <div class="level-0-info" id="productionInfoDisplay" style="background-color: #f8faff;">
+                    <!-- Dynamic Content -->
+                </div>
             </div>
 
-            <div class="level-section">
-                <div class="level-header">Level 2 (반제품 제조) <span id="l2Count"></span></div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 20%;">상위 Lot</th>
-                            <th style="width: 30%;">구성품</th>
-                            <th style="width: 25%;">생산Lot</th>
-                            <th style="width: 15%;">수량</th>
-                            <th style="width: 10%;">단위</th>
-                        </tr>
-                    </thead>
-                    <tbody id="l2Table"></tbody>
-                </table>
-            </div>
-
-            <div class="level-section">
-                <div class="level-header">Level 3 (하위 조제) <span id="l3Count"></span></div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 20%;">상위 Lot</th>
-                            <th style="width: 30%;">구성품</th>
-                            <th style="width: 25%;">생산Lot</th>
-                            <th style="width: 15%;">수량</th>
-                            <th style="width: 10%;">단위</th>
-                        </tr>
-                    </thead>
-                    <tbody id="l3Table"></tbody>
-                </table>
-            </div>
+            <!-- Level 1, 2, 3 Tables -->
+            <div id="tablesContainer"></div>
         </div>
         
-        <div id="emptyState" style="text-align: center; color: var(--text-muted); padding: 40px;">
-            수식 파일과 목표 생산량을 설정하고 버튼을 눌러주세요.
+        <div id="emptyState" style="text-align: center; color: var(--text-muted); padding: 80px 40px;">
+            파일과 수량을 입력하고 버튼을 눌러주세요.
         </div>
     </div>
 </div>
 
 <script>
-    // Load formula file list
-    fetch('/api/lots')
-        .then(res => res.json())
-        .then(data => {
-            const select = document.getElementById('formulaFileSelect');
-            select.innerHTML = '';
-            
-            if(data && data.length > 0) {
-                data.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.filename;
-                    opt.textContent = item.filename;
-                    // BCE01_BOM_fomula_1.csv를 기본값으로 선택
-                    if(item.filename === 'BCE01_BOM_fomula_1.csv') opt.selected = true;
-                    select.appendChild(opt);
-                });
-            } else {
-                select.innerHTML = '<option value="">가용한 파일 없음</option>';
-            }
-        });
+    // DOM이 완전히 로드된 후 실행
+    document.addEventListener('DOMContentLoaded', function() {
+        loadFormulaFiles();
+    });
+
+    function loadFormulaFiles() {
+        const select = document.getElementById('formulaFileSelect');
+        if (!select) return;
+
+        select.innerHTML = '<option value="">불러오는 중...</option>';
+
+        fetch('/api/lots')
+            .then(res => res.json())
+            .then(data => {
+                select.innerHTML = '';
+                if(data && data.length > 0) {
+                    data.forEach((item, index) => {
+                        const opt = document.createElement('option');
+                        opt.value = item.filename;
+                        opt.textContent = item.filename;
+                        if (index === 0) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    select.innerHTML = '<option value="">파일 없음</option>';
+                }
+            })
+            .catch(err => {
+                console.error("Error loading files:", err);
+                select.innerHTML = '<option value="">로드 실패</option>';
+            });
+    }
 
     function calculateBOM() {
         const formulaFile = document.getElementById('formulaFileSelect').value;
         const targetQty = document.getElementById('targetQty').value;
-
-        if (!formulaFile) {
-            alert("수식 마스터 파일을 선택해주세요.");
-            return;
-        }
-        if (!targetQty || targetQty <= 0) {
-            alert("유효한 목표 생산량을 입력해주세요.");
-            return;
-        }
+        
+        // 추가 정보 수집
+        const extraData = {
+            topLotNo: document.getElementById('topLotNo').value,
+            mfgDate: document.getElementById('mfgDate').value,
+            requestTeam: document.getElementById('requestTeam').value,
+            purpose: document.getElementById('purpose').value
+        };
 
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('resultArea').style.display = 'none';
@@ -303,56 +317,152 @@
         fetch('/api/generate_bom', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ 
-                formula_file: formulaFile,
-                target_qty: targetQty 
-            })
+            body: JSON.stringify({ formula_file: formulaFile, target_qty: targetQty })
         })
         .then(res => res.json())
         .then(data => {
             document.getElementById('spinner').style.display = 'none';
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-            renderResults(data);
+            if (data.error) { alert(data.error); return; }
+            renderResults(data, extraData);
             document.getElementById('resultArea').style.display = 'block';
+            document.getElementById('downloadBtn').style.display = 'block';
         })
         .catch(err => {
             document.getElementById('spinner').style.display = 'none';
-            alert("서버 통신 중 오류가 발생했습니다.");
-            console.error(err);
+            alert("통신 오류가 발생했습니다.");
         });
-    }
+        }
 
-    function renderResults(data) {
-        document.getElementById('summaryInfo').innerText = 
-            `파일 [${data.level0.제품명.replace('전개 소스: ', '')}]을(를) 사용하여 전개한 결과입니다. (목표수량: ${data.level0.목표수량})`;
+        function downloadExcel() {
+        const formulaFile = document.getElementById('formulaFileSelect').value;
 
-        const targetCols = ['상위Lot', '명칭 / 구성품', '생산Lot', '계산된_소요량', '단위'];
+        // 1. 현재 화면의 모든 데이터 수집 (수기 입력 Lot No. 포함)
+        const l0_container = document.getElementById('level0Display');
+        const p0_container = document.getElementById('productionInfoDisplay');
 
-        renderTable('l1Table', 'l1Count', data.level1, targetCols);
-        renderTable('l2Table', 'l2Count', data.level2, targetCols);
-        renderTable('l3Table', 'l3Count', data.level3, targetCols);
-    }
+        const level0 = {
+            제품코드: l0_container.children[0].lastElementChild.innerText,
+            제품명: l0_container.children[1].lastElementChild.innerText,
+            생산수량: l0_container.children[3].lastElementChild.innerText.split('(')[0].replace(/,/g, ''),
+            단위: l0_container.children[3].lastElementChild.innerText.includes('(') ? l0_container.children[3].lastElementChild.innerText.split('(')[1].replace(')', '') : '',
+            topLotNo: p0_container.children[0].lastElementChild.innerText
+        };
 
-    function renderTable(tableId, countId, items, cols) {
-        const tbody = document.getElementById(tableId);
-        tbody.innerHTML = '';
-        document.getElementById(countId).innerText = `${items.length} 항목`;
-        
-        items.forEach(item => {
-            let row = '<tr>';
-            cols.forEach(col => {
-                let val = item[col] || '';
-                if(col === '계산된_소요량') {
-                    row += `<td class="highlight">${val}</td>`;
-                } else {
-                    row += `<td>${val}</td>`;
-                }
+        const collectTableData = (tableId) => {
+            const rows = [];
+            const tbody = document.getElementById(tableId);
+            if (!tbody) return rows;
+
+            Array.from(tbody.children).forEach(tr => {
+                const tds = tr.children;
+                rows.push({
+                    상위연결: tds[0].innerText,
+                    구성품: tds[1].innerText,
+                    CodeNo: tds[2].innerText,
+                    LotNo: tds[3].querySelector('input').value, // 수기 입력값 수집
+                    계산된_소요량: tds[4].innerText.replace(/,/g, ''),
+                    단위: tds[5].innerText
+                });
             });
-            row += '</tr>';
-            tbody.innerHTML += row;
+            return rows;
+        };
+
+        const data = {
+            level0: level0,
+            level1: collectTableData('l1Table'),
+            level2: collectTableData('l2Table'),
+            level3: collectTableData('l3Table')
+        };
+
+        // 2. 서버로 전송 및 파일 다운로드
+        fetch('/api/download_excel', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("Excel generation failed");
+            return res.blob();
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `BOM_Export_${level0.제품코드}_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        })
+        .catch(err => alert("엑셀 다운로드 중 오류가 발생했습니다: " + err.message));
+        }
+
+        function renderResults(data, extraData) {
+    // Render Level 0 - 1st Row (Product)
+    const l0 = data.level0;
+    const unitLabel = l0.단위 ? `<span class="unit-small">(${l0.단위})</span>` : '';
+
+    document.getElementById('level0Display').innerHTML = `
+        <div class="info-item"><span>제품코드</span><div>${l0.CodeNo || '-'}</div></div>
+        <div class="info-item"><span>제품명</span><div>${l0.구성품 || '-'}</div></div>
+        <div class="info-item"><span>생산량 (Target)</span><div>${Number(l0.목표수량).toLocaleString()}${unitLabel}</div></div>
+        <div class="info-item"><span>생산수량 (Actual)</span><div>${Number(l0.생산수량).toLocaleString()}${unitLabel}</div></div>
+    `;
+
+    // Render Level 0 - 2nd Row (Production Info)
+    document.getElementById('productionInfoDisplay').innerHTML = `
+        <div class="info-item"><span>Lot No.</span><div>${extraData.topLotNo || '-'}</div></div>
+        <div class="info-item"><span>제조일자</span><div>${extraData.mfgDate || '-'}</div></div>
+        <div class="info-item"><span>의뢰팀</span><div>${extraData.requestTeam || '-'}</div></div>
+        <div class="info-item"><span>생산목적</span><div>${extraData.purpose || '-'}</div></div>
+    `;
+
+    // Render Tables 1, 2, 3
+    const container = document.getElementById('tablesContainer');
+    container.innerHTML = '';
+
+        [
+            { id: 'l1Table', title: 'Level 1 (포장/완제품)', items: data.level1 },
+            { id: 'l2Table', title: 'Level 2 (반제품 제조)', items: data.level2 },
+            { id: 'l3Table', title: 'Level 3 (하위 조제)', items: data.level3 }
+        ].forEach(section => {
+            if (section.items.length === 0) return;
+
+            const div = document.createElement('div');
+            div.className = 'level-section';
+            
+            let tableHtml = `
+                <div class="level-header">${section.title} <span>${section.items.length} 항목</span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 15%;">상위 연결</th>
+                            <th style="width: 30%;">구성품</th>
+                            <th style="width: 15%;">Code No.</th>
+                            <th style="width: 20%;">Lot No.</th>
+                            <th style="width: 10%;">수량</th>
+                            <th style="width: 10%;">단위</th>
+                        </tr>
+                    </thead>
+                    <tbody id="${section.id}">
+            `;
+
+            section.items.forEach(item => {
+                tableHtml += `
+                    <tr>
+                        <td title="${item.상위연결}">${item.상위연결}</td>
+                        <td title="${item.구성품}">${item.구성품}</td>
+                        <td>${item.CodeNo}</td>
+                        <td><input type="text" class="lot-input" placeholder="입력..."></td>
+                        <td class="highlight">${item.계산된_소요량.toLocaleString()}</td>
+                        <td>${item.단위}</td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += `</tbody></table>`;
+            div.innerHTML = tableHtml;
+            container.appendChild(div);
         });
     }
 </script>
