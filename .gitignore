@@ -25,3 +25,7 @@ tmp/
 # AI Assistant artifacts
 .gemini/
 .cursor/
+
+# Project backups and generated files
+.old/
+*.xlsx
