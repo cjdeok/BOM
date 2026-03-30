@@ -20,6 +20,14 @@ def get_db_connection():
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/styles.css')
+def serve_css():
+    return send_from_directory('.', 'styles.css')
+
+@app.route('/app.js')
+def serve_js():
+    return send_from_directory('.', 'app.js')
+
 # --- BOM 조회 (Viewer) API ---
 @app.route('/api/bom-all')
 def get_bom_all():

@@ -6,146 +6,9 @@
     <title>DxMe® BOM Integrated System</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/styles.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-        :root {
-            --primary: #4F46E5;
-            --primary-dark: #3730A3;
-            --primary-light: #EEF2FF;
-            --secondary: #64748B;
-            --accent: #10B981;
-            --accent-dark: #059669;
-            --warning: #F59E0B;
-            --danger: #EF4444;
-            --bg: #F8FAFC;
-            --card-bg: #FFFFFF;
-            --text-main: #1E293B;
-            --text-muted: #64748B;
-            --border: #E2E8F0;
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text-main); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-
-        /* Layout */
-        .app-header { background: #0F172A; color: white; padding: 0 40px; height: 64px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 10px rgba(0,0,0,0.2); position: sticky; top: 0; z-index: 100; }
-        .branding { display: flex; align-items: center; gap: 14px; }
-        .branding-icon { font-size: 24px; filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5)); }
-        .branding h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; color: #F1F5F9; }
-        
-        /* Tabs */
-        .nav-tabs { display: flex; height: 100%; align-items: center; }
-        .nav-tab { height: 100%; display: flex; align-items: center; padding: 0 28px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.3s; color: #94A3B8; position: relative; }
-        .nav-tab:hover { color: #F1F5F9; background: rgba(255,255,255,0.03); }
-        .nav-tab.active { color: white; background: rgba(255,255,255,0.05); }
-        .nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: var(--primary); }
-
-        .container { max-width: 1600px; margin: 0 auto; padding: 32px; }
-
-        /* Cards & Containers */
-        .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 24px; overflow: hidden; }
-        .card-header { padding: 18px 24px; border-bottom: 1px solid var(--border); background: #FDFDFF; display: flex; align-items: center; justify-content: space-between; }
-        .card-body { padding: 24px; }
-        
-        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; transition: all 0.3s; }
-        .section-title { font-size: 1.25rem; font-weight: 800; color: #0F172A; display: flex; align-items: center; gap: 12px; }
-        .section-subtitle { font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; }
-
-        /* Form Components */
-        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
-        .form-group label { display: block; font-size: 0.8rem; font-weight: 600; color: #64748B; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.025em; }
-        .form-group input, .form-group select { width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 0.95rem; background: #F8FAFC; transition: all 0.2s; color: #1E293B; }
-        .form-group input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1); outline: none; }
-        
-        /* Buttons */
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 20px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; border: none; font-family: inherit; }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .btn:active { transform: translateY(0); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: var(--primary-dark); }
-        .btn-success { background: var(--accent); color: white; }
-        .btn-success:hover { background: var(--accent-dark); }
-        .btn-outline { background: white; border: 1px solid var(--border); color: var(--text-main); }
-        .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-        .btn-ghost { background: transparent; color: var(--text-muted); }
-        .btn-ghost:hover { background: #F1F5F9; color: var(--text-main); }
-
-        /* Tables Modernized */
-        .table-container { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; background: white; font-size: 0.9rem; }
-        th { background: #F8FAFC; color: #475569; font-weight: 700; padding: 16px; text-align: left; border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
-        td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-        tr:last-child td { border-bottom: none; }
-        
-        .level-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; margin-right: 8px; text-transform: uppercase; letter-spacing: 0.025em; }
-        .lv0 { background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; }
-        .lv1 { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
-        .lv2 { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
-        .lv3 { background: #FEFCE8; color: #854D02; border: 1px solid #FEF08A; }
-        
-        /* Viewer Specific */
-        .lot-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; }
-        .lot-btn { padding: 8px 18px; border: 1px solid var(--border); border-radius: 8px; background: white; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s; color: #4B5563; }
-        .lot-btn:hover { border-color: var(--primary); color: var(--primary); background: #F5F7FF; }
-        .lot-btn.active { border-color: var(--primary); background: var(--primary); color: white; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }
-        
-        .l0-info { border-left: 5px solid var(--primary); display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 5px; }
-        .info-cell { background: #F9FAFB; border-radius: 8px; padding: 12px 16px; border: 1px solid var(--border); }
-        .info-cell .lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
-        .info-cell .val { font-size: 0.95rem; font-weight: 700; color: #1F2937; }
-
-        .accordion-header { display: flex; align-items: center; padding: 14px 20px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.2s; background: white; }
-        .accordion-header:hover { background: #F9FAFB; }
-        .toggle-icon { width: 24px; color: var(--text-muted); transition: transform 0.2s; font-size: 9px; display: flex; align-items: center; justify-content: center; }
-        .toggle-icon.open { transform: rotate(90deg); color: var(--primary); }
-        
-        .sub-table-label { font-size: 0.85rem; font-weight: 700; color: #15803D; padding: 15px 0 8px; display: flex; align-items: center; gap: 8px; }
-        .sub-table-label.l3-label { color: #854D02; padding-top: 20px; }
-        .l3-divider { border: none; border-top: 1px dashed #E5E7EB; margin: 15px 0 0; }
-
-        /* Animation & Misc */
-        .loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px; gap: 20px; color: var(--primary); }
-        .spinner { width: 48px; height: 48px; border: 4px solid #E5E7EB; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        [v-cloak] { display: none; }
-
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-        .modal-box { background: white; border-radius: 16px; width: 95%; max-width: 1000px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #F9FAFB; }
-        .modal-body { padding: 24px; overflow-y: auto; }
-
-        [v-cloak] { display: none; }
-        .loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px; gap: 15px; color: var(--secondary); }
-        .spinner { width: 40px; height: 40px; border: 4px solid rgba(0,0,0,0.1); border-top-color: var(--secondary); border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* ===== BOM 불출 현황 탭 스타일 ===== */
-        .upload-zone { border: 2px dashed #C7D2FE; border-radius: 16px; padding: 60px 40px; text-align: center; cursor: pointer; transition: all 0.3s; background: #FAFBFF; position: relative; }
-        .upload-zone:hover { border-color: var(--primary); background: #EEF2FF; }
-        .upload-zone.drag-over { border-color: var(--primary); background: #EEF2FF; box-shadow: 0 0 0 4px rgba(79,70,229,0.1); }
-        .upload-icon { font-size: 3rem; margin-bottom: 14px; display: block; }
-        .upload-btn-fake { display: inline-block; margin-top: 18px; padding: 10px 28px; background: var(--primary); color: white; border-radius: 8px; font-weight: 600; font-size: 0.9rem; transition: background 0.2s; }
-        .upload-zone:hover .upload-btn-fake { background: var(--primary-dark); }
-        .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-        .summary-card { background: white; border-radius: 12px; padding: 18px 22px; border: 1px solid var(--border); display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: box-shadow 0.2s; }
-        .summary-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .sc-icon { font-size: 2rem; flex-shrink: 0; }
-        .sc-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 4px; }
-        .sc-value { font-size: 1.6rem; font-weight: 800; color: var(--text-main); line-height: 1; }
-        .sc-unit { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
-        .bom-result-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-        .bom-result-title { font-size: 1.1rem; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
-        .bom-result-subtitle { color: var(--text-muted); font-size: 0.82rem; margin-top: 4px; }
-        .btn-gray { background: #6B7280; color: white; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; font-family: inherit; }
-        .btn-gray:hover { background: #4B5563; }
-        .expiry-near { color: #D97706; font-weight: 600; }
-        .status-badge-ok { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; background: #D1FAE5; color: #065F46; white-space: nowrap; }
-        .status-badge-shortage { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; background: #FEE2E2; color: #991B1B; white-space: nowrap; }
-    </style>
 </head>
 <body>
 <div id="app" v-cloak>
@@ -248,20 +111,25 @@
                                         <i class="fas fa-arrow-right"></i> Level 2 원재료 상세
                                     </div>
                                     <div class="table-container">
-                                        <table>
+                                        <table style="table-layout: fixed; min-width: 950px;">
                                             <thead>
                                                 <tr>
-                                                    <th style="width:140px;">상위 Lot</th><th>Code</th><th>품목명</th><th style="text-align:right;">사용량</th><th>할당 Lot</th><th>유효기간</th>
+                                                    <th style="width:150px; white-space: nowrap;">상위 Lot</th>
+                                                    <th style="width:110px;">Code</th>
+                                                    <th style="width: auto;">품목명</th>
+                                                    <th style="width:100px; text-align:right;">사용량</th>
+                                                    <th style="width:200px; white-space: nowrap;">할당 Lot</th>
+                                                    <th style="width:110px; white-space: nowrap;">유효기간</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 <tr v-for="l2 in getL2SubItems(l1['Lot No.'])" :key="l2.ID">
-                                                    <td style="font-size: 0.75rem; color: var(--text-muted);">{{ l2['상위Lot'] }}</td>
+                                                    <td style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l2['상위Lot'] }}</td>
                                                     <td style="font-weight: 700;">{{ l2['코드번호'] }}</td>
-                                                    <td style="font-weight: 500;">{{ l2['원재료명'] }}</td>
+                                                    <td style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ l2['원재료명'] }}</td>
                                                     <td style="text-align:right;">{{ l2['제조량'] }}</td>
-                                                    <td style="color: var(--primary); font-weight: 600;">{{ l2['Lot No.'] }}</td>
-                                                    <td :class="{ 'expiry-near': isExpiryNear(l2['유효기간']) }">{{ l2['유효기간'] }}</td>
+                                                    <td style="color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l2['Lot No.'] }}</td>
+                                                    <td :class="{ 'expiry-near': isExpiryNear(l2['유효기간']) }" style="white-space: nowrap;">{{ l2['유효기간'] }}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -273,21 +141,26 @@
                                             <i class="fas fa-level-down-alt"></i> Level 3 하위 원재료
                                         </div>
                                         <div class="table-container">
-                                            <table>
+                                            <table style="table-layout: fixed; min-width: 950px;">
                                                 <thead>
                                                     <tr>
-                                                        <th style="width:140px;">상위 Lot</th><th>Code</th><th>품목명</th><th style="text-align:right;">사용량</th><th>할당 Lot</th><th>유효기간</th>
+                                                        <th style="width:150px; white-space: nowrap;">상위 Lot</th>
+                                                        <th style="width:110px;">Code</th>
+                                                        <th style="width: auto;">품목명</th>
+                                                        <th style="width:100px; text-align:right;">사용량</th>
+                                                        <th style="width:200px; white-space: nowrap;">할당 Lot</th>
+                                                        <th style="width:110px; white-space: nowrap;">유효기간</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    <tr v-for="l3 in getL3SubItems(getL2SubItems(l1['Lot No.']))" :key="l3.ID">
-                                                        <td style="font-size: 0.75rem; color: var(--text-muted);">{{ l3['상위Lot'] }}</td>
-                                                        <td style="font-weight: 700;">{{ l3['코드번호'] }}</td>
-                                                        <td style="font-weight: 500;">{{ l3['원재료명'] }}</td>
-                                                        <td style="text-align:right;">{{ l3['제조량'] }}</td>
-                                                        <td style="color: var(--primary); font-weight: 600;">{{ l3['Lot No.'] }}</td>
-                                                        <td :class="{ 'expiry-near': isExpiryNear(l3['유효기간']) }">{{ l3['유효기간'] }}</td>
-                                                    </tr>
+                                                <tr v-for="l3 in getL3SubItems(getL2SubItems(l1['Lot No.']))" :key="l3.ID">
+                                                    <td style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l3['상위Lot'] }}</td>
+                                                    <td style="font-weight: 700;">{{ l3['코드번호'] }}</td>
+                                                    <td style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ l3['원재료명'] }}</td>
+                                                    <td style="text-align:right;">{{ l3['제조량'] }}</td>
+                                                    <td style="color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l3['Lot No.'] }}</td>
+                                                    <td :class="{ 'expiry-near': isExpiryNear(l3['유효기간']) }" style="white-space: nowrap;">{{ l3['유효기간'] }}</td>
+                                                </tr>
                                                 </tbody>
                                             </table>
                                         </div>
@@ -334,21 +207,6 @@
                     </div>
                 </div>
 
-                <div class="summary-cards" style="margin-bottom: 24px;">
-                    <div class="summary-card">
-                        <div class="sc-icon">📊</div>
-                        <div><div class="sc-label">전체 품목</div><div class="sc-value">{{ csvRows.length }} <span class="sc-unit">항목</span></div></div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="sc-icon" style="color: var(--accent);">✅</div>
-                        <div><div class="sc-label">할당 완료</div><div class="sc-value">{{ csvCompletedCount }} <span class="sc-unit">항목</span></div></div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="sc-icon" style="color: var(--danger);">⚠️</div>
-                        <div><div class="sc-label">부족</div><div class="sc-value">{{ csvShortageCount }} <span class="sc-unit">항목</span></div></div>
-                    </div>
-                </div>
-
                 <!-- Level 0 입력 카드 -->
                 <div class="card level-card l0">
                     <div class="level-header">
@@ -386,43 +244,43 @@
                             </span>
                         </div>
                         <div class="table-container">
-                            <table>
+                            <table style="table-layout: fixed; min-width: 1100px;">
                                 <thead>
                                     <tr>
-                                        <th style="width: 130px; text-align:center;">상위 Lot</th>
-                                        <th style="width: 120px;">Code No.</th>
-                                        <th style="width: auto;">명칭 / 구성품</th>
+                                        <th style="width: 150px; text-align:center; white-space: nowrap;">상위 Lot</th>
+                                        <th style="width: 110px;">Code No.</th>
+                                        <th style="width: 170px;">명칭 / 구성품</th>
                                         <th style="width: 100px; text-align:right;">필요 수량</th>
-                                        <th style="width: 80px; text-align:center;">단위</th>
-                                        <th style="width: 180px;">할당 Lot</th>
-                                        <th style="width: 110px;">유효기간</th>
-                                        <th style="width: 100px; text-align:right;">할당수량</th>
+                                        <th style="width: 60px; text-align:center;">단위</th>
+                                        <th style="width: 320px; white-space: nowrap;">할당 Lot</th>
+                                        <th style="width: 110px; white-space: nowrap;">유효기간</th>
+                                        <th style="width: 90px; text-align:right;">할당수량</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <template v-for="(group, gIdx) in csvByLevelGrouped[lvl]" :key="gIdx">
                                         <tr>
                                             <td v-if="group.isFirstInLot" :rowspan="group.lotSpan" 
-                                                style="font-size: 0.75rem; font-weight:700; color: var(--primary); background:#F8FAFC; text-align:center; vertical-align:middle; border-right:1px solid var(--border);">
+                                                style="font-size: 0.75rem; font-weight:700; color: var(--primary); background:#F8FAFC; text-align:center; vertical-align:middle; border-right:1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                                                 {{ group.rows[0]['상위 Lot'] }}
                                             </td>
                                             <td :rowspan="group.span" style="vertical-align:middle; font-weight:700;">{{ group.rows[0]['Code No.'] }}</td>
-                                            <td :rowspan="group.span" style="vertical-align:middle; font-weight:500;">{{ group.rows[0]['명칭 / 구성품'] }}</td>
+                                            <td :rowspan="group.span" style="vertical-align:middle; font-weight:500; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ group.rows[0]['명칭 / 구성품'] }}</td>
                                             <td :rowspan="group.span" style="text-align:right; vertical-align:middle;">
                                                 <span v-if="group.rows[0]._isNCSpecial" style="color: var(--text-muted); font-style: italic;">({{ group.rows[0]._reqDisplayQty || 0 }})</span>
                                                 <span v-else>{{ group.rows[0]['필요 수량'] }}</span>
                                             </td>
                                             <td :rowspan="group.span" style="text-align:center; vertical-align:middle; color: var(--text-muted);">{{ group.rows[0]['단위'] }}</td>
-                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600;">{{ group.rows[0]['할당 Lot'] }}</td>
-                                            <td :class="{ 'expiry-near': isExpiryNear(group.rows[0]['유효기간']) }">{{ group.rows[0]['유효기간'] }}</td>
+                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="group.rows[0]['할당 Lot']">{{ group.rows[0]['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(group.rows[0]['유효기간']) }" style="white-space: nowrap;">{{ group.rows[0]['유효기간'] }}</td>
                                             <td style="text-align:right; font-weight:700; color: var(--primary);">
                                                 <span v-if="group.rows[0]._isNCSpecial" style="color: var(--text-muted);">({{ group.rows[0]._allocDisplayQty || 0 }})</span>
                                                 <span v-else>{{ group.rows[0]['할당수량'] }}</span>
                                             </td>
                                         </tr>
                                         <tr v-for="(row, rIdx) in group.rows.slice(1)" :key="rIdx" style="background: #FAFAFB;">
-                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600; border-left: 2px solid var(--primary);">{{ row['할당 Lot'] }}</td>
-                                            <td :class="{ 'expiry-near': isExpiryNear(row['유효기간']) }">{{ row['유효기간'] }}</td>
+                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600; border-left: 2px solid var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="row['할당 Lot']">{{ row['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(row['유효기간']) }" style="white-space: nowrap;">{{ row['유효기간'] }}</td>
                                             <td style="text-align:right; font-weight:700; color: var(--primary);">{{ row['할당수량'] }}</td>
                                         </tr>
                                     </template>
@@ -494,20 +352,25 @@
             </div>
             <div class="modal-body">
                 <div class="table-container">
-                    <table>
+                    <table style="min-width: 1000px; table-layout: fixed;">
                         <thead>
                             <tr>
-                                <th>Division</th><th>문서명 (Doc Name)</th><th>최신문서</th><th>제조일자</th><th>할당 Lot</th><th>유효기간</th>
+                                <th style="width: 80px;">Division</th>
+                                <th style="width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">문서명 (Doc Name)</th>
+                                <th style="width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">최신문서</th>
+                                <th style="width: 120px;">제조일자</th>
+                                <th style="width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">할당 Lot</th>
+                                <th style="width: 100px; white-space: nowrap;">유효기간</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="item in semiLotList" :key="item.id">
                                 <td style="font-weight:700;">{{ item.division }}</td>
-                                <td style="font-size:0.85rem;">{{ item.doc_name }}</td>
-                                <td style="font-size:0.75rem; color:var(--text-muted);">{{ item.latest_doc_no }}</td>
-                                <td><input type="text" v-model="item.mfgDate" @input="onSemiMfgDateChange(item)" placeholder="예: 20260330" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:6px;"></td>
-                                <td style="font-weight:600; color:var(--primary);">{{ item.calcLot }}</td>
-                                <td>{{ item.expiryDate }}</td>
+                                <td style="font-size:0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="item.doc_name">{{ item.doc_name }}</td>
+                                <td style="font-size:0.75rem; color:var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="item.latest_doc_no">{{ item.latest_doc_no }}</td>
+                                <td><input type="text" v-model="item.mfgDate" @input="onSemiMfgDateChange(item)" placeholder="예: 20260330" style="width:100%; padding:4px 8px; border:1px solid var(--border); border-radius:6px;"></td>
+                                <td style="font-weight:600; color:var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="item.calcLot">{{ item.calcLot }}</td>
+                                <td style="white-space: nowrap;">{{ item.expiryDate }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -517,522 +380,6 @@
     </div>
 </div>
 
-<script>
-    const { createApp, ref, computed, onMounted, reactive } = Vue;
-
-    createApp({
-        setup() {
-            const currentTab = ref('upload-bom');
-            
-
-
-            // --- BOM Viewer State ---
-            const viewData = ref({ level0: [], level1: [], level2: [], level3: [], instruction_summary: [] });
-            const isViewLoading = ref(true);
-            const selectedViewLot = ref(null);
-            const openViewItems = ref(new Set());
-            const showSemiModal = ref(false);
-            const showRawModal = ref(false);
-
-            // --- CSV Upload State ---
-            const csvRows = ref([]);
-            const csvFileName = ref('');
-            const isDragOver = ref(false);
-            const csvInput = ref(null);
-            const csvLevel0 = reactive({
-                productName: '',
-                productCode: '',
-                lotNo: '',
-                targetQty: '',
-                version: '',
-                mfgDate: new Date().toISOString().slice(0, 10),
-                requestTeam: '',
-                purpose: ''
-            });
-
-            const isCsvLevel0Valid = computed(() => {
-                return csvLevel0.productName && csvLevel0.productCode && csvLevel0.lotNo &&
-                       csvLevel0.targetQty && csvLevel0.version && csvLevel0.mfgDate &&
-                       csvLevel0.requestTeam && csvLevel0.purpose;
-            });
-
-            const applyLotHierarchy = () => {
-                const rows = csvRows.value;
-                if (!rows || rows.length === 0) return;
-
-                const getVal = (row, keys) => {
-                    for (const k of keys) {
-                        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
-                            return String(row[k]).trim();
-                        }
-                    }
-                    return '';
-                };
-
-                const colMaps = {
-                    level: ['Level', '레벨', 'lvl'],
-                    parentLot: ['상위 Lot', '상위Lot', '상위 LOT', '상위LOT', '상위Lot ', 'Parent Lot', '상급Lot'],
-                    parentConn: ['상위 연결', '상위연결', '상위 연결(Code)', '상위연결(Code)', '상위 연결 ', 'Parent', '상위 연결(명칭)'],
-                    allocLot: ['할당 Lot', '할당Lot', '할당 LOT', '할당LOT', 'Lot No.', 'LotNo', '할당 Lot ', '할당 LOT NO'],
-                    codeNo: ['Code No.', 'CodeNo', '코드번호', '코드 No.', '품목코드', 'Code No. ', 'Code'],
-                    name: ['명칭 / 구성품', '명칭/구성품', '원재료명', '구성품 명칭', '품목명', 'Description', '명칭']
-                };
-
-                // Process Level 1 -> 2 -> 3
-                [1, 2, 3].forEach(currentLvl => {
-                    rows.forEach(row => {
-                        const l = parseInt(getVal(row, colMaps.level) || '0');
-                        if (l !== currentLvl) return;
-
-                        if (l === 1) {
-                            row['상위 Lot'] = csvLevel0.lotNo;
-                        } else {
-                            // Search key: Check '상위 연결' column first, then current '상위 Lot' column
-                            let pStr = getVal(row, colMaps.parentConn).toLowerCase();
-                            if (!pStr) pStr = getVal(row, colMaps.parentLot).toLowerCase();
-                            
-                            if (!pStr) return;
-
-                            const parentLvl = l - 1;
-                            const parent = rows.find(p => {
-                                const pl = parseInt(getVal(p, colMaps.level) || '0');
-                                if (pl !== parentLvl) return false;
-                                
-                                const pCode = getVal(p, colMaps.codeNo).toLowerCase();
-                                const pName = getVal(p, colMaps.name).toLowerCase();
-                                
-                                return pCode === pStr || pName === pStr || 
-                                       (pCode && pStr.includes(pCode)) || (pName && pStr.includes(pName)) ||
-                                       (pCode && pCode.includes(pStr)) || (pName && pName.includes(pStr));
-                            });
-
-                            if (parent) {
-                                let pAlloc = getVal(parent, colMaps.allocLot);
-                                if (pAlloc) {
-                                    row['상위 Lot'] = pAlloc;
-                                }
-                            }
-                        }
-                    });
-                });
-
-                // Special Rule for NC Item BCM005: Copy from PC
-                rows.forEach(row => {
-                    const l = parseInt(getVal(row, colMaps.level) || '0');
-                    const itemCode = getVal(row, colMaps.codeNo);
-                    const parentLot = getVal(row, colMaps.parentLot);
-
-                    if (l === 2 && itemCode === 'BCM005' && parentLot.toUpperCase().includes('NC')) {
-                        // Find matching PC row (same level, same code, but parent lot contains 'PC')
-                        const pcRow = rows.find(p => 
-                            parseInt(getVal(p, colMaps.level) || '0') === 2 && 
-                            getVal(p, colMaps.codeNo) === 'BCM005' && 
-                            getVal(p, colMaps.parentLot).toUpperCase().includes('PC')
-                        );
-
-                        if (pcRow) {
-                            row['할당 Lot'] = getVal(pcRow, colMaps.allocLot);
-                            row['유효기간'] = getVal(pcRow, colMaps.parentLot === '유효기간' ? ['유효기간'] : ['유효기간']); // Helper
-                            // Re-fetch expiry because it might be under '유효기간' key
-                            row['유효기간'] = pcRow['유효기간'] || '';
-                            
-                            // Set Qty to 0 and mark as special NC
-                            row['필요 수량'] = 0;
-                            row['할당수량'] = 0;
-                            row._isNCSpecial = true;
-                        }
-                    }
-                });
-                
-                csvRows.value = JSON.parse(JSON.stringify(rows));
-                alert('상위 Lot 계층 구조 및 NC 특수 로직(BCM005)이 적용되었습니다.');
-            };
-
-            // --- API Calls ---
-            // --- CSV 파싱 유틸 ---
-            function parseCsvLine(line) {
-                const result = [];
-                let current = '';
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const ch = line[i];
-                    if (ch === '"') {
-                        if (!inQuotes) { inQuotes = true; }
-                        else if (line[i + 1] === '"') { current += '"'; i++; }
-                        else { inQuotes = false; }
-                    } else if (ch === ',' && !inQuotes) {
-                        result.push(current); current = '';
-                    } else { current += ch; }
-                }
-                result.push(current);
-                return result;
-            }
-
-            function cleanVal(v) {
-                // Excel 수식 포맷 제거: =" value" → value, =value → value
-                return String(v || '').replace(/^="(.*)"$/, '$1').replace(/^=(.+)$/, '$1').trim();
-            }
-
-            function parseCsvText(text) {
-                const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
-                if (lines.length < 2) return [];
-                const headers = parseCsvLine(lines[0]).map(h => cleanVal(h));
-                return lines.slice(1).map(line => {
-                    const vals = parseCsvLine(line);
-                    const row = {};
-                    headers.forEach((h, i) => { row[h] = cleanVal(vals[i] || ''); });
-                    return row;
-                }).filter(r => headers.some(h => r[h]));
-            }
-
-            // CSV computed - 상태에 관계없이 전체 행 표시
-            const csvFiltered = computed(() => csvRows.value);
-            const csvCompletedCount = computed(() => csvRows.value.filter(r => r['상태'] === '할당 완료').length);
-            const csvShortageCount = computed(() => csvRows.value.filter(r => r['상태'] === '부족').length);
-            const csvByLevel = computed(() => {
-                const result = {};
-                csvFiltered.value.forEach(r => {
-                    const lvl = parseInt(r['Level']);
-                    if (!isNaN(lvl)) { if (!result[lvl]) result[lvl] = []; result[lvl].push(r); }
-                });
-                return result;
-            });
-
-            // 동일 항목(상위Lot+Code+명칭) 그룹화 및 시각적 상위 Lot 병합(LotSpan) 계산
-            const csvByLevelGrouped = computed(() => {
-                const result = {};
-                Object.keys(csvByLevel.value).forEach(lvl => {
-                    const rows = csvByLevel.value[lvl];
-                    const groups = [];
-                    let i = 0;
-                    
-                    // 1차 그룹화: 상위 Lot + Code + 명칭 (기존 로직 유지)
-                    while (i < rows.length) {
-                        const row = rows[i];
-                        const key = `${row['상위 Lot']}|${row['Code No.']}|${row['명칭 / 구성품']}`;
-                        const group = [row];
-                        let j = i + 1;
-                        while (j < rows.length) {
-                            const nk = `${rows[j]['상위 Lot']}|${rows[j]['Code No.']}|${rows[j]['명칭 / 구성품']}`;
-                            if (nk === key) { group.push(rows[j]); j++; } else break;
-                        }
-                        groups.push({ rows: group, span: group.length, lot: row['상위 Lot'] });
-                        i = j;
-                    }
-
-                    // 2차 처리: 동일한 '상위 Lot'이 연속되는 그룹들을 찾아 rowspan(lotSpan) 계산
-                    let gIdx = 0;
-                    while (gIdx < groups.length) {
-                        const currentLot = groups[gIdx].lot;
-                        let totalRowsForLot = groups[gIdx].span;
-                        let nextGIdx = gIdx + 1;
-                        
-                        while (nextGIdx < groups.length && groups[nextGIdx].lot === currentLot) {
-                            totalRowsForLot += groups[nextGIdx].span;
-                            nextGIdx++;
-                        }
-                        
-                        groups[gIdx].isFirstInLot = true;
-                        groups[gIdx].lotSpan = totalRowsForLot;
-                        
-                        // 뒤따르는 동일 Lot 그룹들은 표시하지 않도록 설정
-                        for (let k = gIdx + 1; k < nextGIdx; k++) {
-                            groups[k].isFirstInLot = false;
-                        }
-                        gIdx = nextGIdx;
-                    }
-                    
-                    result[lvl] = groups;
-                });
-                return result;
-            });
-
-            const isExpiryNear = (dateStr) => {
-                if (!dateStr) return false;
-                const d = new Date(dateStr);
-                if (isNaN(d)) return false;
-                const diffDays = (d - new Date()) / (1000 * 60 * 60 * 24);
-                return diffDays > 0 && diffDays < 180;
-            };
-
-            // CSV 파일 로드
-            const loadCsvFile = (file) => {
-                csvFileName.value = file.name;
-                
-                // 파일명 파싱 처리
-                const filename = file.name;
-                const codeNo = filename.substring(0, 5); // 파일명 첫 5자리
-                const parts = filename.split('_');
-                let targetQty = '';
-                if (parts.length >= 3) {
-                    targetQty = parts[2]; // 두번째 "_" 와 세번째 "_" 사이 값
-                }
-                
-                // item_master 데이터 조회 후 설정
-                fetch(`/api/item_master/${codeNo}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data && !data.error) {
-                            csvLevel0.productCode = data.code_no || codeNo;
-                            csvLevel0.productName = data.description || '';
-                            csvLevel0.targetQty = targetQty;
-                        } else {
-                            csvLevel0.productCode = codeNo;
-                            csvLevel0.targetQty = targetQty;
-                        }
-                    })
-                    .catch(e => console.error('item_master fetch error:', e));
-
-                const tryParse = (encoding) => new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(parseCsvText(e.target.result));
-                    reader.readAsText(file, encoding);
-                });
-                tryParse('UTF-8').then(rows => {
-                    if (rows.length > 0 && rows[0]['상태']) {
-                        csvRows.value = rows;
-                    } else {
-                        tryParse('EUC-KR').then(rows2 => { csvRows.value = rows2; });
-                    }
-                });
-            };
-
-            const triggerCsvInput = () => { if (csvInput.value) csvInput.value.click(); };
-            const handleCsvDrop = (e) => { isDragOver.value = false; const f = e.dataTransfer.files[0]; if (f) loadCsvFile(f); };
-            const handleCsvFile = (e) => { const f = e.target.files[0]; if (f) loadCsvFile(f); };
-            const resetCsv = () => { csvRows.value = []; csvFileName.value = ''; };
-
-            const downloadCsvResult = () => {
-                if (!csvFiltered.value.length || typeof XLSX === 'undefined') return;
-                const headers = ['Level', '상위 Lot', 'Code No.', '명칭 / 구성품', '필요 수량', '단위', '할당 Lot', '유효기간', '할당수량'];
-                const wsData = [headers, ...csvFiltered.value.map(r => headers.map(h => r[h] || ''))];
-                const ws = XLSX.utils.aoa_to_sheet(wsData);
-                const colWidths = [10, 16, 12, 28, 10, 6, 22, 12, 10, 8];
-                ws['!cols'] = colWidths.map(w => ({ wch: w }));
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'BOM_불출현황');
-                const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-                XLSX.writeFile(wb, `BOM_불출현황_${date}.xlsx`);
-            };
-
-            const loadViewerData = async () => {
-                isViewLoading.value = true;
-                try {
-                    const res = await fetch('/api/bom-all');
-                    const data = await res.json();
-                    Object.keys(data).forEach(key => {
-                        data[key] = data[key].map((item, idx) => {
-                            const cleaned = {};
-                            Object.entries(item).forEach(([k, v]) => {
-                                cleaned[k] = String(v ?? '').replace(/\s00:00:00(\.\d+)?/g, '').trim();
-                            });
-                            return { ...cleaned, ID: `${key}_${idx}` };
-                        });
-                    });
-                    viewData.value = data;
-                    if (data.level0.length > 0) selectViewLot(data.level0[0]['LOT NO.']);
-                } finally {
-                    isViewLoading.value = false;
-                }
-            };
-
-            // --- Viewer Logic ---
-            const selectViewLot = (lot) => { selectedViewLot.value = lot; openViewItems.value = new Set(); };
-            const currentL0 = computed(() => viewData.value.level0.find(i => i['LOT NO.'] === selectedViewLot.value));
-            const displayL0Info = computed(() => {
-                if (!currentL0.value) return {};
-                const { Level: _, ID: __, ...rest } = currentL0.value;
-                return rest;
-            });
-
-            const toggleOpen = (id) => {
-                const s = new Set(openViewItems.value);
-                s.has(id) ? s.delete(id) : s.add(id);
-                openViewItems.value = s;
-            };
-            const isOpen = (id) => openViewItems.value.has(id);
-            const splitLines = (str) => String(str || '').split('\n').filter(Boolean);
-
-            const groupItems = (items, keyCols, valCols) => {
-                const groups = new Map();
-                items.forEach(item => {
-                    const key = keyCols.map(c => item[c]).join('||');
-                    if (!groups.has(key)) {
-                        const g = { ...item };
-                        valCols.forEach(c => { g[c] = String(item[c] || ''); });
-                        groups.set(key, g);
-                    } else {
-                        const g = groups.get(key);
-                        valCols.forEach(c => { g[c] += '\n' + String(item[c] || ''); });
-                    }
-                });
-                return Array.from(groups.values());
-            };
-
-            const filteredL1 = computed(() => {
-                const l1 = viewData.value.level1.filter(i => i['상위Lot'] === selectedViewLot.value);
-                return groupItems(l1, ['코드번호', '구성품 명칭'], ['Lot No.', '제조일자', '유효기간', '포장시 요구량']);
-            });
-
-            const getL2SubItems = (l1LotStr) => {
-                const lots = splitLines(l1LotStr);
-                const l2 = viewData.value.level2.filter(i => lots.includes(i['상위Lot']));
-                return groupItems(l2, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량']);
-            };
-
-            const getL3SubItems = (l2Items) => {
-                const l2Lots = l2Items.flatMap(i => splitLines(i['Lot No.']));
-                const l3 = viewData.value.level3.filter(i => l2Lots.includes(i['상위Lot']));
-                return groupItems(l3, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량']);
-            };
-
-            const hasChildren = (l1LotStr) => {
-                const lots = splitLines(l1LotStr);
-                return viewData.value.level2.some(i => lots.includes(i['상위Lot']));
-            };
-
-            const filteredInstructions = computed(() => viewData.value.instruction_summary.filter(i => i['상위Lot'] === selectedViewLot.value));
-            
-            const aggregatedMaterials = computed(() => {
-                const l1Items = viewData.value.level1.filter(i => i['상위Lot'] === selectedViewLot.value);
-                const l1Lots = l1Items.map(i => i['Lot No.']).filter(Boolean);
-                const l2All = viewData.value.level2.filter(i => l1Lots.includes(i['상위Lot']));
-                const l2Lots = l2All.map(i => i['Lot No.']).filter(Boolean);
-                const l3All = viewData.value.level3.filter(i => l2Lots.includes(i['상위Lot']));
-
-                const map = new Map();
-                const proc = (items) => {
-                    items.forEach(item => {
-                        const code = item['코드번호'] || '';
-                        if (!code) return;
-                        if (!map.has(code)) map.set(code, { code, name: (item['원재료명'] || item['구성품 명칭'] || ''), total: 0, unit: item['단위'] || '' });
-                        const q = parseFloat(String(item['제조량'] || item['포장시 요구량'] || '0').replace(/,/g, ''));
-                        if (!isNaN(q)) map.get(code).total += q;
-                    });
-                };
-                proc(l3All); proc(l2All); proc(l1Items);
-                const res = Array.from(map.values());
-                res.forEach(r => { if (r.code === 'BCM005') r.total /= 2; r.total = Math.round(r.total * 1000) / 1000; });
-                return res.sort((a,b) => a.code.localeCompare(b.code));
-            });
-
-            // --- 반제품 Lot Modal Logic ---
-            const showSemiLotModal = ref(false);
-            const semiLotList = ref([]);
-
-            const parseDateInput = (val) => {
-                if (!val) return null;
-                const s = String(val).replace(/\D/g, '');
-                if (s.length === 8) {
-                    return new Date(`${s.substring(0,4)}-${s.substring(4,6)}-${s.substring(6,8)}`);
-                } else if (s.length === 6) {
-                    return new Date(`20${s.substring(0,2)}-${s.substring(2,4)}-${s.substring(4,6)}`);
-                }
-                const d = new Date(val);
-                return isNaN(d) ? null : d;
-            };
-
-            const calcSemiLot = (mfgDate, division, docNo) => {
-                if (!mfgDate || !division || !docNo) return '';
-                try {
-                    const dateObj = parseDateInput(mfgDate);
-                    if (!dateObj || isNaN(dateObj)) return '';
-                    const yy = String(dateObj.getFullYear()).slice(-2);
-                    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-                    const dd = String(dateObj.getDate()).padStart(2, '0');
-                    const textDate = `${mm}${dd}${yy}`;
-
-                    const divM1 = String(division).substring(3, 5);
-                    const divM2 = String(division).substring(0, 2);
-
-                    const docM = String(docNo).substring(19, 21);
-                    const docR = String(docNo).slice(-2);
-                    
-                    return `${textDate}-${divM1}${divM2}-${docM}${docR}`;
-                } catch(e) { return ''; }
-            };
-
-            const calcExpiryDate = (mfgDate) => {
-                if (!mfgDate) return '';
-                const d = parseDateInput(mfgDate);
-                if (!d || isNaN(d)) return '';
-                d.setMonth(d.getMonth() + 13);
-                d.setDate(d.getDate() - 1);
-                const yyyy = d.getFullYear();
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const dd = String(d.getDate()).padStart(2, '0');
-                return `${yyyy}-${mm}-${dd}`;
-            };
-
-            const openSemiLotModal = async () => {
-                if (!csvLevel0.productCode) {
-                    alert("먼저 Level 0의 제품 Code No.를 확인해주세요.");
-                    return;
-                }
-                try {
-                    const res = await fetch(`/api/doc_master/${csvLevel0.productCode}`);
-                    const data = await res.json();
-                    if (data && data.length) {
-                        const filteredData = data.filter(d => {
-                            const div = String(d.division || '').toUpperCase();
-                            return !div.startsWith('LA') && !div.startsWith('PI');
-                        });
-                        semiLotList.value = filteredData.map(d => ({
-                            ...d, mfgDate: '', calcLot: '', expiryDate: ''
-                        }));
-                        showSemiLotModal.value = true;
-                    } else {
-                        alert('해당 Code No.에 대한 반제품 제조지침서를 찾을 수 없습니다.');
-                    }
-                } catch (e) {
-                    alert('데이터 로드 실패: ' + e);
-                }
-            };
-
-            const onSemiMfgDateChange = (item) => {
-                if (item.mfgDate) {
-                    item.calcLot = calcSemiLot(item.mfgDate, item.division, item.latest_doc_no);
-                    item.expiryDate = calcExpiryDate(item.mfgDate);
-                } else {
-                    item.calcLot = '';
-                    item.expiryDate = '';
-                }
-            };
-
-            const applySemiLots = () => {
-                semiLotList.value.forEach(semi => {
-                    if (!semi.calcLot && !semi.expiryDate) return;
-                    
-                    csvRows.value.forEach(row => {
-                        if (String(row['Code No.'] || '').trim().toUpperCase() === String(semi.division || '').trim().toUpperCase()) {
-                            if (semi.calcLot) row['할당 Lot'] = semi.calcLot;
-                            if (semi.expiryDate) row['유효기간'] = semi.expiryDate;
-                            if (row['필요 수량']) row['할당수량'] = row['필요 수량'];
-                        }
-                    });
-                });
-                alert('일괄 적용되었습니다.');
-                showSemiLotModal.value = false;
-            };
-
-            onMounted(() => {
-                loadViewerData();
-            });
-
-            return {
-                currentTab, 
-                viewData, isViewLoading, selectedViewLot, currentL0, displayL0Info, selectViewLot,
-                filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
-                showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
-                // CSV Upload Tab
-                csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
-                csvCompletedCount, csvShortageCount,
-                triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
-                showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,
-                isCsvLevel0Valid, applyLotHierarchy
-            };
-        }
-    }).mount('#app');
-</script>
+<script src="/app.js"></script>
 </body>
 </html>
