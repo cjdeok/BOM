@@ -10,61 +10,76 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
-            --primary: #4F46E5; /* Indigo */
-            --primary-dark: #4338CA;
-            --secondary: #2563a8; /* Blue */
-            --accent: #10B981; /* Emerald */
-            --bg: #F3F4F6;
-            --card-bg: #ffffff;
-            --text-main: #111827;
-            --text-muted: #6B7280;
-            --border: #E5E7EB;
+            --primary: #4F46E5;
+            --primary-dark: #3730A3;
+            --primary-light: #EEF2FF;
+            --secondary: #64748B;
+            --accent: #10B981;
+            --accent-dark: #059669;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --bg: #F8FAFC;
+            --card-bg: #FFFFFF;
+            --text-main: #1E293B;
+            --text-muted: #64748B;
+            --border: #E2E8F0;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background: var(--bg); color: var(--text-main); font-size: 14px; line-height: 1.5; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text-main); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
 
         /* Layout */
-        .app-header { background: linear-gradient(135deg, #111827 0%, #1e293b 100%); color: white; padding: 0 30px; height: 60px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .branding { display: flex; align-items: center; gap: 12px; }
-        .branding-icon { font-size: 22px; }
-        .branding h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.025em; }
+        .app-header { background: #0F172A; color: white; padding: 0 40px; height: 64px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 10px rgba(0,0,0,0.2); position: sticky; top: 0; z-index: 100; }
+        .branding { display: flex; align-items: center; gap: 14px; }
+        .branding-icon { font-size: 24px; filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5)); }
+        .branding h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; color: #F1F5F9; }
         
-        /* Tabs Navigation */
-        .nav-tabs { display: flex; height: 100%; gap: 0; }
-        .nav-tab { height: 100%; display: flex; align-items: center; padding: 0 24px; cursor: pointer; font-weight: 600; font-size: 0.95rem; transition: all 0.2s; color: rgba(255,255,255,0.6); border-bottom: 3px solid transparent; border-radius: 0; }
-        .nav-tab:hover { color: white; background: rgba(255,255,255,0.05); }
-        .nav-tab.active { color: white; background: rgba(255,255,255,0.1); border-bottom-color: #6366F1; }
+        /* Tabs */
+        .nav-tabs { display: flex; height: 100%; align-items: center; }
+        .nav-tab { height: 100%; display: flex; align-items: center; padding: 0 28px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.3s; color: #94A3B8; position: relative; }
+        .nav-tab:hover { color: #F1F5F9; background: rgba(255,255,255,0.03); }
+        .nav-tab.active { color: white; background: rgba(255,255,255,0.05); }
+        .nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: var(--primary); }
 
-        .container { max-width: 1500px; margin: 0 auto; padding: 25px; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 32px; }
 
-        /* Common Components */
-        .card { background: var(--card-bg); border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); margin-bottom: 25px; border: 1px solid var(--border); }
-        .section-title { font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        /* Cards & Containers */
+        .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 24px; overflow: hidden; }
+        .card-header { padding: 18px 24px; border-bottom: 1px solid var(--border); background: #FDFDFF; display: flex; align-items: center; justify-content: space-between; }
+        .card-body { padding: 24px; }
         
-        /* Generator Styles */
-        .generator-layout { display: grid; grid-template-columns: 320px 1fr; gap: 25px; align-items: start; }
-        .form-group { margin-bottom: 16px; }
-        /* Form & Buttons */
-        .form-group { margin-bottom: 18px; }
-        .form-group label { display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
-        .form-group input, .form-group select { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.9rem; outline: none; transition: all 0.2s; font-family: inherit; background-color: #F9FAFB; }
-        .form-group input:focus, .form-group select:focus { border-color: var(--primary); background-color: white; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-        
-        .btn-primary { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: all 0.2s; font-family: inherit; }
-        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .btn-primary:active { transform: translateY(0); }
-        .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; transform: none; box-shadow: none; }
-        
-        .btn-success { background: var(--accent); color: white; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; font-family: inherit; }
-        .btn-success:hover { background: #059669; transform: translateY(-1px); }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; transition: all 0.3s; }
+        .section-title { font-size: 1.25rem; font-weight: 800; color: #0F172A; display: flex; align-items: center; gap: 12px; }
+        .section-subtitle { font-size: 0.85rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; }
 
-        /* Tables & Data Grid */
-        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        th { background: #F9FAFB; color: #4B5563; font-weight: 600; padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
-        td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: #374151; }
+        /* Form Components */
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .form-group label { display: block; font-size: 0.8rem; font-weight: 600; color: #64748B; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.025em; }
+        .form-group input, .form-group select { width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 0.95rem; background: #F8FAFC; transition: all 0.2s; color: #1E293B; }
+        .form-group input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1); outline: none; }
+        
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 20px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; border: none; font-family: inherit; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-success { background: var(--accent); color: white; }
+        .btn-success:hover { background: var(--accent-dark); }
+        .btn-outline { background: white; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+        .btn-ghost { background: transparent; color: var(--text-muted); }
+        .btn-ghost:hover { background: #F1F5F9; color: var(--text-main); }
+
+        /* Tables Modernized */
+        .table-container { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; background: white; font-size: 0.9rem; }
+        th { background: #F8FAFC; color: #475569; font-weight: 700; padding: 16px; text-align: left; border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+        td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #fcfcfc; }
         
         .level-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; margin-right: 8px; text-transform: uppercase; letter-spacing: 0.025em; }
         .lv0 { background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; }
@@ -72,21 +87,6 @@
         .lv2 { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
         .lv3 { background: #FEFCE8; color: #854D02; border: 1px solid #FEF08A; }
         
-        /* Generator Specific */
-        .generator-layout { display: grid; grid-template-columns: 320px 1fr; gap: 30px; align-items: start; }
-        .gen-level-section { margin-bottom: 25px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: white; }
-        .gen-level-header { padding: 12px 20px; font-weight: 600; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
-        .gen-level-header.lv0-header { background-color: var(--primary); color: white; }
-        .gen-level-header.lv1-header { background-color: #EFF6FF; color: #1E40AF; }
-        .gen-level-header.lv2-header { background-color: #F0FDF4; color: #166534; }
-        .gen-level-header.lv3-header { background-color: #FEFCE8; color: #854D0E; }
-        .gen-l0-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; padding: 18px 20px; }
-        .gen-l0-grid.product-row { background-color: #F5F7FF; border-bottom: 1px solid #E0E7FF; }
-        .gen-l0-grid.info-row { background-color: #ffffff; }
-        .gen-info-item span { display: block; font-size: 0.7rem; color: #6366F1; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; }
-        .gen-info-item div { font-weight: 700; font-size: 1rem; color: #1F2937; }
-        input.lot-input { padding: 6px 10px !important; border: 1px solid #D1D5DB !important; background-color: #FFFBEB !important; width: 100%; border-radius: 6px; font-size: 0.85rem; font-family: inherit; }
-
         /* Viewer Specific */
         .lot-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; }
         .lot-btn { padding: 8px 18px; border: 1px solid var(--border); border-radius: 8px; background: white; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s; color: #4B5563; }
@@ -155,237 +155,144 @@
             <h1>DxMe® BOM Integrated System</h1>
         </div>
         <div class="nav-tabs">
-            <div :class="['nav-tab', { active: currentTab === 'generator' }]" @click="currentTab = 'generator'">
-                <i class="fas fa-plus-circle"></i> BOM 생성
-            </div>
             <div :class="['nav-tab', { active: currentTab === 'viewer' }]" @click="currentTab = 'viewer'">
-                <i class="fas fa-search"></i> BOM 조회
+                <i class="fas fa-search" style="margin-right:8px;"></i> BOM 조회
             </div>
             <div :class="['nav-tab', { active: currentTab === 'upload-bom' }]" @click="currentTab = 'upload-bom'">
-                <i class="fas fa-clipboard-list"></i> BOM 불출 현황
+                <i class="fas fa-clipboard-list" style="margin-right:8px;"></i> BOM_제조지시 실행
             </div>
         </div>
     </div>
 
     <div class="container">
-        <!-- TAB 1: BOM GENERATOR -->
-        <div v-if="currentTab === 'generator'" class="generator-layout">
-            <!-- 설정 패널 -->
-            <div class="card" style="height: fit-content;">
-                <h2 class="section-title"><i class="fas fa-cog"></i> BOM 계산 설정</h2>
-                <div class="form-group">
-                    <label>수식 마스터 파일 선택</label>
-                    <select v-model="genConfig.formulaFile">
-                        <option v-for="f in formulaFiles" :value="f.filename" :key="f.filename">{{ f.filename }}</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>생산량</label>
-                    <input type="number" v-model="genConfig.targetQty" placeholder="예: 96">
-                </div>
-                <div class="form-group">
-                    <label>Lot No.</label>
-                    <input type="text" v-model="genConfig.topLotNo" placeholder="예: LOT20260325">
-                </div>
-                <div class="form-group">
-                    <label>제조일자</label>
-                    <input type="text" v-model="genConfig.mfgDate" placeholder="예: 2026-03-25">
-                </div>
-                <div class="form-group">
-                    <label>의뢰팀</label>
-                    <input type="text" v-model="genConfig.requestTeam" placeholder="예: 생산1팀">
-                </div>
-                <div class="form-group">
-                    <label>생산목적</label>
-                    <input type="text" v-model="genConfig.purpose" placeholder="예: 정기 생산">
-                </div>
-                <button class="btn-primary" @click="generateBom" :disabled="isGenLoading">
-                    <span v-if="isGenLoading">⏳ 계산 중...</span>
-                    <span v-else">BOM 전개 및 계산</span>
-                </button>
-            </div>
-
-            <!-- 결과 패널 -->
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border);">
-                    <h2 class="section-title" style="margin-bottom: 0; border: none; padding: 0;">
-                        <i class="fas fa-list-ul"></i> 전개 결과 (BOM Tree)
-                    </h2>
-                    <button v-if="genResult" class="btn-success" @click="downloadExcel">
-                        <i class="fas fa-file-excel"></i> 엑셀 다운로드
-                    </button>
-                </div>
-
-                <!-- 로딩 -->
-                <div v-if="isGenLoading" class="loading-spinner">
-                    <div class="spinner"></div>
-                    <p>수식을 분석하고 BOM을 구성하는 중입니다...</p>
-                </div>
-
-                <!-- 결과 영역 -->
-                <div v-else-if="genResult">
-                    <!-- Level 0: 2행 구조 -->
-                    <div class="gen-level-section" style="border: 2px solid #6366F1;">
-                        <div class="gen-level-header lv0-header">Level 0 &nbsp;(최상위 제품 및 생산 정보)</div>
-                        <!-- 1행: 제품 정보 -->
-                        <div class="gen-l0-grid product-row">
-                            <div class="gen-info-item"><span>제품코드</span><div>{{ genResult.level0.CodeNo || '-' }}</div></div>
-                            <div class="gen-info-item"><span>제품명</span><div>{{ genResult.level0.제품명 || '-' }}</div></div>
-                            <div class="gen-info-item"><span>생산량 (Target)</span><div>{{ Number(genResult.level0.목표수량).toLocaleString() }}<span class="unit-small">({{ genResult.level0.단위 }})</span></div></div>
-                            <div class="gen-info-item"><span>생산수량 (Actual)</span><div>{{ Number(genResult.level0.생산수량).toLocaleString() }}<span class="unit-small">({{ genResult.level0.단위 }})</span></div></div>
-                        </div>
-                        <!-- 2행: 생산 정보 -->
-                        <div class="gen-l0-grid info-row">
-                            <div class="gen-info-item"><span>Lot No.</span><div>{{ genConfig.topLotNo || '-' }}</div></div>
-                            <div class="gen-info-item"><span>제조일자</span><div>{{ genConfig.mfgDate || '-' }}</div></div>
-                            <div class="gen-info-item"><span>의뢰팀</span><div>{{ genConfig.requestTeam || '-' }}</div></div>
-                            <div class="gen-info-item"><span>생산목적</span><div>{{ genConfig.purpose || '-' }}</div></div>
-                        </div>
-                    </div>
-
-                    <!-- Level 1, 2, 3 테이블 -->
-                    <template v-for="(levelInfo, idx) in genLevelConfig" :key="idx">
-                        <div v-if="genResult[levelInfo.key] && genResult[levelInfo.key].length > 0"
-                             class="gen-level-section" style="margin-top: 16px;">
-                            <div :class="'gen-level-header ' + levelInfo.cls">
-                                {{ levelInfo.title }}
-                                <span style="font-size: 0.8rem; font-weight: 400;">{{ genResult[levelInfo.key].length }} 항목</span>
-                            </div>
-                            <table style="table-layout: fixed;">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 15%;">상위 연결</th>
-                                        <th style="width: 30%;">구성품</th>
-                                        <th style="width: 15%;">Code No.</th>
-                                        <th style="width: 20%;">Lot No.</th>
-                                        <th style="width: 10%;">수량</th>
-                                        <th style="width: 10%;">단위</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="item in genResult[levelInfo.key]" :key="item.ID">
-                                        <td :title="item.상위연결" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ item.상위연결 }}</td>
-                                        <td :title="item.구성품" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><b>{{ item.구성품 }}</b></td>
-                                        <td>{{ item.CodeNo }}</td>
-                                        <td><input type="text" class="lot-input" v-model="item.LotNo" placeholder="입력..."></td>
-                                        <td style="color: #4F46E5; font-weight: 700;">{{ (item.계산된_소요량 || 0).toLocaleString() }}</td>
-                                        <td>{{ item.단위 }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </template>
-                </div>
-
-                <div v-else style="text-align: center; color: #9CA3AF; padding: 80px 40px;">
-                    파일과 수량을 입력하고 버튼을 눌러주세요.
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 2: BOM VIEWER -->
+        <!-- TAB 1: BOM 조회 (Viewer) -->
         <div v-if="currentTab === 'viewer'">
             <div v-if="isViewLoading" class="loading-spinner">
                 <div class="spinner"></div>
                 <p>데이터베이스에서 정보를 불러오고 있습니다...</p>
             </div>
-
             <template v-else>
+                <!-- BOM 선택 카드 -->
                 <div class="card">
-                    <label style="display:block; margin-bottom: 10px; font-weight: 700; color:var(--primary);">📦 Level 0 — LOT NO. 선택</label>
-                    <div class="lot-grid">
-                        <button v-for="l0 in viewData.level0" :key="l0['LOT NO.']"
-                            @click="selectViewLot(l0['LOT NO.'])"
-                            :class="['lot-btn', { active: selectedViewLot === l0['LOT NO.'] }]">
-                            {{ l0['LOT NO.'] }}
+                    <div class="card-header">
+                        <div class="section-title">
+                            <i class="fas fa-database" style="color: var(--primary);"></i>
+                            <span>생산 BOM 조회 및 관리</span>
+                        </div>
+                        <button class="btn btn-outline" @click="loadViewerData">
+                            <i class="fas fa-sync-alt"></i> 새로고침
                         </button>
                     </div>
-                </div>
-
-                <div class="card" v-if="currentL0">
-                    <h2 class="section-title"><span class="level-badge lv0">Level 0</span> 완제품 상세 정보</h2>
-                    <div class="l0-info">
-                        <div class="info-cell" v-for="(val, key) in displayL0Info" :key="key">
-                            <div class="lbl">{{ key }}</div>
-                            <div class="val">{{ val }}</div>
+                    <div class="card-body">
+                        <div class="lot-grid">
+                            <button v-for="l0 in viewData.level0" :key="l0['LOT NO.']"
+                                    @click="selectViewLot(l0['LOT NO.'])"
+                                    :class="['lot-btn', { active: selectedViewLot === l0['LOT NO.'] }]">
+                                {{ l0['LOT NO.'] }}
+                            </button>
                         </div>
                     </div>
-                    <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end;">
-                        <button class="btn-primary" style="width: auto; background: #EF4444;" @click="showSemiModal = true">
-                            <i class="fas fa-industry"></i> 반제품 지침
-                        </button>
-                        <button class="btn-primary" style="width: auto;" @click="showRawModal = true">
-                            <i class="fas fa-vial"></i> 원재료 합계
-                        </button>
-                    </div>
                 </div>
 
-                <div v-if="selectedViewLot" class="card">
-                    <h2 class="section-title"><span class="level-badge lv1">Level 1</span> 구성품 계층 구조</h2>
-                    <div v-if="filteredL1.length === 0" style="padding: 20px; text-align: center; color: #999;">데이터가 없습니다.</div>
-                    
-                    <div v-for="item in filteredL1" :key="item.ID" style="border: 1px solid #eef2f7; margin-bottom: 10px; border-radius: 8px; overflow: hidden;">
-                        <div class="accordion-header" @click="hasChildren(item['Lot No.']) && toggleOpen(item.ID)">
-                            <div class="toggle-icon" v-if="hasChildren(item['Lot No.'])" :class="{ open: isOpen(item.ID) }">▶</div>
-                            <div class="toggle-icon" v-else></div>
-                            <div style="flex: 1; display: flex; align-items: center; gap: 15px;">
-                                <span class="level-badge lv1">{{ item['코드번호'] }}</span>
-                                <span style="font-weight: 700; font-size: 15px;">{{ item['구성품 명칭'] }}</span>
+                <!-- 상세 정보 영역 -->
+                <div v-if="selectedViewLot">
+                    <!-- Level 0 정보 카드 -->
+                    <div class="card level-card l0">
+                        <div class="level-header">
+                            <h4><i class="fas fa-info-circle" style="color: var(--primary);"></i> Level 0 <span class="badge badge-indigo" style="margin-left:10px;">완제품 상세 정보</span></h4>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn btn-outline" style="padding: 6px 14px; font-size: 0.8rem;" @click="showSemiModal = true">
+                                    <i class="fas fa-industry"></i> 반제품 지침
+                                </button>
+                                <button class="btn btn-outline" style="padding: 6px 14px; font-size: 0.8rem;" @click="showRawModal = true">
+                                    <i class="fas fa-flask"></i> 원재료 합계
+                                </button>
                             </div>
-                            <div style="font-size: 12px; color: #666; text-align: right;">
-                                <div v-for="(lot, idx) in splitLines(item['Lot No.'])" :key="idx">
-                                    Lot: <b>{{ lot }}</b> | 수량: <b>{{ splitLines(item['포장시 요구량'])[idx] }} {{ splitLines(item['단위'])[idx] }}</b>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-grid">
+                                <div v-for="(val, lbl) in displayL0Info" :key="lbl" class="info-cell">
+                                    <div class="lbl">{{ lbl }}</div>
+                                    <div class="val">{{ val }}</div>
                                 </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div v-if="isOpen(item.ID)" style="padding: 15px 15px 15px 40px; background: #fafbfc;">
-                            <h4 style="font-size: 13px; color: #15803d; margin-bottom: 10px;">
-                                <i class="fas fa-angle-double-right"></i> Level 2 — 원재료
-                            </h4>
-                            <table class="viewer-table">
-                                <thead>
-                                    <tr>
-                                        <th>상위 Lot</th><th>Code</th><th>명칭</th><th>제조사</th><th>Lot No.</th><th>수량</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template v-for="l2 in getL2SubItems(item['Lot No.'])" :key="l2.ID">
-                                        <tr :style="{ background: (viewData.level3.some(i => splitLines(l2['Lot No.']).includes(i['상위Lot']))) ? '#fffef0' : '' }">
-                                            <td>{{ l2['상위Lot'] }}</td>
-                                            <td><b>{{ l2['코드번호'] }}</b></td>
-                                            <td>{{ l2['원재료명'] }}</td>
-                                            <td>{{ l2['제조사'] }}</td>
-                                            <td><div v-for="l in splitLines(l2['Lot No.'])">{{ l }}</div></td>
-                                            <td><div v-for="q in splitLines(l2['제조량'])">{{ q }} {{ l2['단위'] }}</div></td>
-                                        </tr>
+                    <!-- 계층 구조 상세 카드 -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="section-title" style="font-size: 1rem;">
+                                <i class="fas fa-list-ol"></i> 불출 항목 계층 구조
+                            </div>
+                        </div>
+                        <div style="background: #FDFDFF;">
+                            <div v-for="l1 in filteredL1" :key="l1.ID" style="border-bottom: 1px solid var(--border);">
+                                <div class="accordion-header" @click="toggleOpen(l1.ID)">
+                                    <div class="toggle-icon" :class="{ open: isOpen(l1.ID) }"><i class="fas fa-chevron-right"></i></div>
+                                    <div style="display: flex; justify-content: space-between; flex: 1; align-items: center; padding-left: 10px;">
+                                        <div style="display: flex; gap: 20px; align-items: center;">
+                                            <span class="badge badge-blue">LV1</span>
+                                            <b style="font-size: 0.95rem;">{{ l1['Code No.'] || l1['코드번호'] }}</b>
+                                            <span style="font-weight: 500;">{{ l1['명칭 / 구성품'] || l1['구성품 명칭'] }}</span>
+                                        </div>
+                                        <div style="display: flex; gap: 30px; font-size: 0.85rem; color: var(--text-muted);">
+                                            <span>요구량: <b style="color: var(--text-main);">{{ l1['포장시 요구량'] }}</b></span>
+                                            <span>Lot: <b style="color: var(--primary);">{{ splitLines(l1['Lot No.']).length }}개</b></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-if="isOpen(l1.ID)" class="card-body" style="background: #FCFDFF; padding: 0 32px 32px 64px; border-top: 1px solid #F1F5F9;">
+                                    <!-- Level 2 테이블 -->
+                                    <div class="sub-table-label">
+                                        <i class="fas fa-arrow-right"></i> Level 2 원재료 상세
+                                    </div>
+                                    <div class="table-container">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:140px;">상위 Lot</th><th>Code</th><th>품목명</th><th style="text-align:right;">사용량</th><th>할당 Lot</th><th>유효기간</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="l2 in getL2SubItems(l1['Lot No.'])" :key="l2.ID">
+                                                    <td style="font-size: 0.75rem; color: var(--text-muted);">{{ l2['상위Lot'] }}</td>
+                                                    <td style="font-weight: 700;">{{ l2['코드번호'] }}</td>
+                                                    <td style="font-weight: 500;">{{ l2['원재료명'] }}</td>
+                                                    <td style="text-align:right;">{{ l2['제조량'] }}</td>
+                                                    <td style="color: var(--primary); font-weight: 600;">{{ l2['Lot No.'] }}</td>
+                                                    <td :class="{ 'expiry-near': isExpiryNear(l2['유효기간']) }">{{ l2['유효기간'] }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <!-- Level 3 테이블 -->
+                                    <template v-if="getL3SubItems(getL2SubItems(l1['Lot No.'])).length > 0">
+                                        <div class="sub-table-label l3-label">
+                                            <i class="fas fa-level-down-alt"></i> Level 3 하위 원재료
+                                        </div>
+                                        <div class="table-container">
+                                            <table>
+                                                <thead>
+                                                    <tr>
+                                                        <th style="width:140px;">상위 Lot</th><th>Code</th><th>품목명</th><th style="text-align:right;">사용량</th><th>할당 Lot</th><th>유효기간</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="l3 in getL3SubItems(getL2SubItems(l1['Lot No.']))" :key="l3.ID">
+                                                        <td style="font-size: 0.75rem; color: var(--text-muted);">{{ l3['상위Lot'] }}</td>
+                                                        <td style="font-weight: 700;">{{ l3['코드번호'] }}</td>
+                                                        <td style="font-weight: 500;">{{ l3['원재료명'] }}</td>
+                                                        <td style="text-align:right;">{{ l3['제조량'] }}</td>
+                                                        <td style="color: var(--primary); font-weight: 600;">{{ l3['Lot No.'] }}</td>
+                                                        <td :class="{ 'expiry-near': isExpiryNear(l3['유효기간']) }">{{ l3['유효기간'] }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </template>
-                                </tbody>
-                            </table>
-
-                            <!-- Level 3 Section (Added) -->
-                            <div v-if="getL3SubItems(getL2SubItems(item['Lot No.'])).length > 0">
-                                <hr class="l3-divider">
-                                <div class="sub-table-label l3-label">
-                                    <i class="fas fa-layer-group"></i> Level 3 — 하위 원재료 ({{ getL3SubItems(getL2SubItems(item['Lot No.'])).length }}건)
                                 </div>
-                                <table class="viewer-table">
-                                    <thead>
-                                        <tr>
-                                            <th>상위 Lot (L2)</th><th>Code</th><th>명칭</th><th>제조사</th><th>Lot No.</th><th>수량</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="l3 in getL3SubItems(getL2SubItems(item['Lot No.']))" :key="l3.ID">
-                                            <td style="font-size:10px; color:#888;">{{ l3['상위Lot'] }}</td>
-                                            <td><b>{{ l3['코드번호'] }}</b></td>
-                                            <td>{{ l3['원재료명'] }}</td>
-                                            <td>{{ l3['제조사'] }}</td>
-                                            <td><div v-for="l in splitLines(l3['Lot No.'])">{{ l }}</div></td>
-                                            <td><div v-for="q in splitLines(l3['제조량'])">{{ q }} {{ l3['단위'] }}</div></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
                             </div>
                         </div>
                     </div>
@@ -393,131 +300,130 @@
             </template>
         </div>
 
-        <!-- TAB 3: BOM 불출 현황 (CSV Upload) -->
+        <!-- TAB 2: BOM_제조지시 실행 (Upload/Apply) -->
         <div v-if="currentTab === 'upload-bom'">
-            <!-- 파일 미로드 상태: 업로드 영역 -->
-            <div class="card" v-if="!csvRows.length">
-                <h2 class="section-title"><i class="fas fa-clipboard-list"></i> BOM 불출 현황 — CSV 파일 업로드</h2>
-                <p style="margin-bottom: 20px; color: #6b7280; font-size: 0.95rem;">
-                    생산관리 통합관리 -> 생산관리 -> 생산지시 생성된 BOM 할당량 CSV 업로드
-                </p>
-                <div class="upload-zone"
-                     :class="{ 'drag-over': isDragOver }"
-                     @click="triggerCsvInput"
-                     @dragover.prevent="isDragOver = true"
-                     @dragleave="isDragOver = false"
-                     @drop.prevent="handleCsvDrop">
-                    <span class="upload-icon">📂</span>
-                    <p style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 6px;">CSV 파일을 여기에 드래그하거나 클릭하여 선택하세요</p>
-                    <p style="color: var(--text-muted); font-size: 0.85rem;">형식: BCEXX_BOM_수량_생성일자.csv (UTF-8 또는 EUC-KR 자동 감지)</p>
-                    <div class="upload-btn-fake"><i class="fas fa-folder-open"></i> 파일 선택</div>
+            <!-- 업로드 대기 영역 -->
+            <div v-if="!csvRows.length" class="card" style="margin-top: 10px; border-style: dashed; border-width: 2px;">
+                <div class="card-body">
+                    <div class="upload-zone" 
+                         :class="{ 'drag-over': isDragOver }"
+                         @dragover.prevent="isDragOver = true"
+                         @dragleave.prevent="isDragOver = false"
+                         @drop.prevent="handleCsvDrop"
+                         @click="triggerCsvInput">
+                        <input type="file" ref="csvInput" style="display: none" accept=".csv" @change="handleCsvFile">
+                        <span class="upload-icon">📄</span>
+                        <h2 style="font-size: 1.5rem; font-weight: 800; margin-bottom: 8px;">제조지시 BOM CSV 업로드</h2>
+                        <p style="color: var(--text-muted); margin-bottom: 24px;">파일을 여기에 드래그하거나 클릭하여 업로드하세요</p>
+                        <div class="btn btn-primary" style="padding: 12px 32px;">파일 선택</div>
+                    </div>
                 </div>
-                <input type="file" ref="csvInput" accept=".csv" style="display:none" @change="handleCsvFile">
             </div>
 
-            <!-- 로드 완료 상태: 결과 표시 -->
-            <div v-if="csvRows.length">
-                <!-- 결과 헤더 -->
-                <div class="card" style="padding: 20px 24px;">
-                    <div class="bom-result-header">
-                        <div>
-                            <div class="bom-result-title">
-                                <i class="fas fa-file-csv" style="color: var(--primary);"></i>
-                                {{ csvFileName }}
-                            </div>
-                            <div class="bom-result-subtitle">상태에 관계없이 모든 구성품을 표시합니다</div>
-                        </div>
-                        <div style="display: flex; gap: 10px; flex-wrap: nowrap; align-items: center;">
-                            <button class="btn-primary" style="width: auto; padding: 8px 18px; font-size: 0.85rem; white-space: nowrap;" @click="openSemiLotModal"><i class="fas fa-edit"></i> 반제품 Lot 생성</button>
-                            <button class="btn-success" style="white-space: nowrap;" @click="downloadCsvResult"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
-                            <button class="btn-gray" style="white-space: nowrap;" @click="resetCsv"><i class="fas fa-redo"></i> 다시 불러오기</button>
-                        </div>
+            <!-- 데이터 표시 영역 -->
+            <div v-else>
+                <div class="section-header" style="margin-bottom: 16px;">
+                    <div class="section-title">
+                        <i class="fas fa-file-invoice" style="color: var(--primary);"></i>
+                        <span>{{ csvFileName }} <span class="section-subtitle" style="margin-left: 10px; display:inline;">| 할당 프로세스 실행</span></span>
                     </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="width: auto; padding: 8px 18px; font-size: 0.85rem;" @click="openSemiLotModal"><i class="fas fa-edit"></i> 반제품 Lot 생성</button>
+                        <button class="btn btn-success" @click="downloadCsvResult"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
+                        <button class="btn btn-outline" @click="resetCsv"><i class="fas fa-redo"></i> 초기화</button>
+                    </div>
+                </div>
 
-                    <!-- Level 0 입력 폼 -->
-                    <div class="gen-level-section" style="border: 2px solid #6366F1; margin-top: 16px; margin-bottom: 0;">
-                        <div class="gen-level-header lv0-header">
-                            <span><i class="fas fa-layer-group" style="margin-right: 6px;"></i>Level 0 &nbsp;&nbsp;생산 정보 입력</span>
-                            <span style="font-size: 0.8rem; font-weight: 400; opacity: 0.8;">각 항목을 입력하세요</span>
-                        </div>
-                        <div style="padding: 16px 20px;">
-                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>제품명</label>
-                                    <input type="text" v-model="csvLevel0.productName" placeholder="제품명 입력">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>제품 Code No.</label>
-                                    <input type="text" v-model="csvLevel0.productCode" placeholder="예: DX-001">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>생산 Lot No.</label>
-                                    <input type="text" v-model="csvLevel0.lotNo" placeholder="예: LOT20260330">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>목표 수량</label>
-                                    <input type="number" v-model="csvLevel0.targetQty" placeholder="예: 96">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>제품버전</label>
-                                    <input type="text" v-model="csvLevel0.version" placeholder="예: 1.0">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>제조일자</label>
-                                    <input type="text" v-model="csvLevel0.mfgDate" placeholder="예: 2026-03-30">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>의뢰팀</label>
-                                    <input type="text" v-model="csvLevel0.requestTeam" placeholder="예: 생산1팀">
-                                </div>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label>생산목적</label>
-                                    <input type="text" v-model="csvLevel0.purpose" placeholder="예: 정기생산">
-                                </div>
-                            </div>
+                <div class="summary-cards" style="margin-bottom: 24px;">
+                    <div class="summary-card">
+                        <div class="sc-icon">📊</div>
+                        <div><div class="sc-label">전체 품목</div><div class="sc-value">{{ csvRows.length }} <span class="sc-unit">항목</span></div></div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="sc-icon" style="color: var(--accent);">✅</div>
+                        <div><div class="sc-label">할당 완료</div><div class="sc-value">{{ csvCompletedCount }} <span class="sc-unit">항목</span></div></div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="sc-icon" style="color: var(--danger);">⚠️</div>
+                        <div><div class="sc-label">부족</div><div class="sc-value">{{ csvShortageCount }} <span class="sc-unit">항목</span></div></div>
+                    </div>
+                </div>
+
+                <!-- Level 0 입력 카드 -->
+                <div class="card level-card l0">
+                    <div class="level-header">
+                        <h4><i class="fas fa-layer-group" style="color: var(--primary);"></i> Level 0 <span class="badge badge-indigo" style="margin-left: 10px;">생산 정보 입력</span></h4>
+                        <button class="btn btn-primary" style="padding: 6px 16px; font-size: 0.85rem;" :disabled="!isCsvLevel0Valid" @click="applyLotHierarchy">
+                            <i class="fas fa-sitemap"></i> 적용
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group"><label>제품명</label><input type="text" v-model="csvLevel0.productName"></div>
+                            <div class="form-group"><label>제품 Code No.</label><input type="text" v-model="csvLevel0.productCode"></div>
+                            <div class="form-group"><label>생산 Lot No.</label><input type="text" v-model="csvLevel0.lotNo"></div>
+                            <div class="form-group"><label>목표 수량</label><input type="number" v-model="csvLevel0.targetQty"></div>
+                            <div class="form-group"><label>제품버전</label><input type="text" v-model="csvLevel0.version"></div>
+                            <div class="form-group"><label>제조일자</label><input type="text" v-model="csvLevel0.mfgDate"></div>
+                            <div class="form-group"><label>의뢰팀</label><input type="text" v-model="csvLevel0.requestTeam"></div>
+                            <div class="form-group"><label>생산목적</label><input type="text" v-model="csvLevel0.purpose"></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 레벨별 테이블 -->
+                <!-- 레벨별 데이터 카드 (Level 1, 2, 3) -->
                 <template v-for="lvl in [1, 2, 3]" :key="lvl">
-                    <div v-if="csvByLevel[lvl] && csvByLevel[lvl].length > 0" class="gen-level-section" style="margin-bottom: 20px;">
-                        <div :class="'gen-level-header ' + ['lv1-header','lv2-header','lv3-header'][lvl-1]">
-                            <span>Level {{ lvl }} <span style="font-weight:400; font-size:0.82rem; opacity:0.8;">{{ lvl === 1 ? '(구성품 / 포장재)' : lvl === 2 ? '(반제품 원재료)' : '(하위 원재료)' }}</span></span>
-                            <span style="font-size: 0.8rem; font-weight: 400;">{{ csvByLevelGrouped[lvl] ? csvByLevelGrouped[lvl].length : 0 }} 항목 ({{ csvByLevel[lvl] ? csvByLevel[lvl].length : 0 }} 행)</span>
+                    <div v-if="csvByLevel[lvl] && csvByLevel[lvl].length > 0" class="card level-card" :class="'l'+lvl">
+                        <div class="level-header">
+                            <h4>
+                                <i class="fas fa-list-ul"></i> Level {{ lvl }} 
+                                <span class="section-subtitle" style="margin-left: 10px;">
+                                    {{ lvl === 1 ? '(구성품 / 포장재)' : lvl === 2 ? '(반제품 원재료)' : '(하위 원재료)' }}
+                                </span>
+                            </h4>
+                            <span class="badge" :class="['badge-blue', 'badge-green', 'badge-amber'][lvl-1]">
+                                {{ csvByLevelGrouped[lvl]?.length || 0 }} 항목
+                            </span>
                         </div>
-                        <div style="overflow-x: auto;">
-                            <table style="table-layout: fixed; min-width: 900px;">
+                        <div class="table-container">
+                            <table>
                                 <thead>
                                     <tr>
-                                        <th style="width: 12%;">상위 Lot</th>
-                                        <th style="width: 12%;">Code No.</th>
-                                        <th style="width: 26%;">명칭 / 구성품</th>
-                                        <th style="width: 9%; text-align:right;">필요 수량</th>
-                                        <th style="width: 6%;">단위</th>
-                                        <th style="width: 20%;">할당 Lot</th>
-                                        <th style="width: 11%;">유효기간</th>
-                                        <th style="width: 9%; text-align:right;">할당수량</th>
+                                        <th style="width: 130px; text-align:center;">상위 Lot</th>
+                                        <th style="width: 120px;">Code No.</th>
+                                        <th style="width: auto;">명칭 / 구성품</th>
+                                        <th style="width: 100px; text-align:right;">필요 수량</th>
+                                        <th style="width: 80px; text-align:center;">단위</th>
+                                        <th style="width: 180px;">할당 Lot</th>
+                                        <th style="width: 110px;">유효기간</th>
+                                        <th style="width: 100px; text-align:right;">할당수량</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <template v-for="(group, gIdx) in csvByLevelGrouped[lvl]" :key="gIdx">
-                                        <!-- 그룹 첫 번째 행: 앞 5칼 rowspan 적용 -->
                                         <tr>
-                                            <td :rowspan="group.span" style="font-size: 0.78rem; color: #6B7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;" :title="group.rows[0]['상위 Lot']">{{ group.rows[0]['상위 Lot'] }}</td>
-                                            <td :rowspan="group.span" style="vertical-align:middle;"><b style="font-size: 0.88rem;">{{ group.rows[0]['Code No.'] }}</b></td>
-                                            <td :rowspan="group.span" :title="group.rows[0]['명칭 / 구성품']" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; vertical-align:middle;">{{ group.rows[0]['명칭 / 구성품'] }}</td>
-                                            <td :rowspan="group.span" style="text-align:right; color:#374151; vertical-align:middle;">{{ group.rows[0]['필요 수량'] }}</td>
-                                            <td :rowspan="group.span" style="color:#6B7280; font-size:0.82rem; vertical-align:middle;">{{ group.rows[0]['단위'] }}</td>
-                                            <td style="font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="group.rows[0]['할당 Lot']">{{ group.rows[0]['할당 Lot'] }}</td>
-                                            <td :class="{ 'expiry-near': isExpiryNear(group.rows[0]['유효기간']) }" style="font-size:0.82rem;">{{ group.rows[0]['유효기간'] }}</td>
-                                            <td style="text-align:right; color:#4F46E5; font-weight:700;">{{ group.rows[0]['할당수량'] }}</td>
+                                            <td v-if="group.isFirstInLot" :rowspan="group.lotSpan" 
+                                                style="font-size: 0.75rem; font-weight:700; color: var(--primary); background:#F8FAFC; text-align:center; vertical-align:middle; border-right:1px solid var(--border);">
+                                                {{ group.rows[0]['상위 Lot'] }}
+                                            </td>
+                                            <td :rowspan="group.span" style="vertical-align:middle; font-weight:700;">{{ group.rows[0]['Code No.'] }}</td>
+                                            <td :rowspan="group.span" style="vertical-align:middle; font-weight:500;">{{ group.rows[0]['명칭 / 구성품'] }}</td>
+                                            <td :rowspan="group.span" style="text-align:right; vertical-align:middle;">
+                                                <span v-if="group.rows[0]._isNCSpecial" style="color: var(--text-muted); font-style: italic;">({{ group.rows[0]._reqDisplayQty || 0 }})</span>
+                                                <span v-else>{{ group.rows[0]['필요 수량'] }}</span>
+                                            </td>
+                                            <td :rowspan="group.span" style="text-align:center; vertical-align:middle; color: var(--text-muted);">{{ group.rows[0]['단위'] }}</td>
+                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600;">{{ group.rows[0]['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(group.rows[0]['유효기간']) }">{{ group.rows[0]['유효기간'] }}</td>
+                                            <td style="text-align:right; font-weight:700; color: var(--primary);">
+                                                <span v-if="group.rows[0]._isNCSpecial" style="color: var(--text-muted);">({{ group.rows[0]._allocDisplayQty || 0 }})</span>
+                                                <span v-else>{{ group.rows[0]['할당수량'] }}</span>
+                                            </td>
                                         </tr>
-                                        <!-- 추가 할당 Lot 행 (앞 5칼 없음) -->
-                                        <tr v-for="(row, rIdx) in group.rows.slice(1)" :key="rIdx" style="background: #FAFBFF;">
-                                            <td style="font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-left: 3px solid #E0E7FF;" :title="row['할당 Lot']">{{ row['할당 Lot'] }}</td>
-                                            <td :class="{ 'expiry-near': isExpiryNear(row['유효기간']) }" style="font-size:0.82rem;">{{ row['유효기간'] }}</td>
-                                            <td style="text-align:right; color:#4F46E5; font-weight:700;">{{ row['할당수량'] }}</td>
+                                        <tr v-for="(row, rIdx) in group.rows.slice(1)" :key="rIdx" style="background: #FAFAFB;">
+                                            <td style="font-size:0.8rem; color: var(--primary); font-weight:600; border-left: 2px solid var(--primary);">{{ row['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(row['유효기간']) }">{{ row['유효기간'] }}</td>
+                                            <td style="text-align:right; font-weight:700; color: var(--primary);">{{ row['할당수량'] }}</td>
                                         </tr>
                                     </template>
                                 </tbody>
@@ -534,19 +440,21 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3>🏭 반제품 제조지침서 — {{ selectedViewLot }}</h3>
-                <button @click="showSemiModal = false">✕</button>
+                <button class="btn btn-ghost" @click="showSemiModal = false">✕</button>
             </div>
             <div class="modal-body">
-                <table>
-                    <thead>
-                        <tr><th>약어</th><th>지침서 No.</th><th>Lot No.</th><th>생산량</th><th>제조일자</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="inst in filteredInstructions" :key="inst.ID">
-                            <td>{{ inst['약어'] }}</td><td>{{ inst['제조지침서 No.'] }}</td><td>{{ inst['Lot. No.'] }}</td><td>{{ inst['생산량'] }}</td><td>{{ inst['제조일자'] }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>약어</th><th>지침서 No.</th><th>Lot No.</th><th style="text-align:right;">생산량</th><th>제조일자</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="inst in filteredInstructions" :key="inst.ID">
+                                <td style="font-weight:700;">{{ inst['약어'] }}</td><td>{{ inst['제조지침서 No.'] }}</td><td>{{ inst['Lot. No.'] }}</td><td style="text-align:right;">{{ inst['생산량'] }}</td><td>{{ inst['제조일자'] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -555,56 +463,55 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3>🧪 원재료 사용량 합계 — {{ selectedViewLot }}</h3>
-                <button @click="showRawModal = false">✕</button>
+                <button class="btn btn-ghost" @click="showRawModal = false">✕</button>
             </div>
             <div class="modal-body">
-                <table>
-                    <thead>
-                        <tr><th>코드</th><th>명칭</th><th>총 사용량</th><th>단위</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="mat in aggregatedMaterials" :key="mat.code">
-                            <td><b>{{ mat.code }}</b></td><td>{{ mat.name }}</td><td>{{ mat.total }}</td><td>{{ mat.unit }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>코드</th><th>명칭</th><th style="text-align:right;">총 사용량</th><th>단위</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="mat in aggregatedMaterials" :key="mat.code">
+                                <td style="font-weight:700;">{{ mat.code }}</td><td>{{ mat.name }}</td><td style="text-align:right; font-weight:600; color:var(--primary);">{{ mat.total }}</td><td>{{ mat.unit }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Semi Lot Modal -->
     <div class="modal-overlay" v-if="showSemiLotModal" @click.self="showSemiLotModal = false">
-        <div class="modal-box" style="max-width: 1400px;">
+        <div class="modal-box" style="max-width: 1200px;">
             <div class="modal-header">
                 <h3>🔖 반제품 Lot. 생성 — {{ csvLevel0.productCode }}</h3>
-                <div>
-                    <button class="btn-primary" @click="applySemiLots" style="padding: 6px 16px; margin-right: 15px; font-size: 0.85rem; width: auto;"><i class="fas fa-check"></i> 일괄 적용</button>
-                    <button @click="showSemiLotModal = false" style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:#6b7280;">✕</button>
+                <div style="display: flex; gap: 12px; align-items:center;">
+                    <button class="btn btn-primary" @click="applySemiLots"><i class="fas fa-check"></i> 일괄 적용</button>
+                    <button class="btn btn-ghost" @click="showSemiLotModal = false" style="font-size:1.2rem;">✕</button>
                 </div>
             </div>
             <div class="modal-body">
-                <table style="width: 100%;">
-                    <thead>
-                        <tr>
-                            <th style="width: 6%;">Division</th>
-                            <th style="white-space: nowrap;">문서명 (Doc Name)</th>
-                            <th style="white-space: nowrap;">최신문서 (Latest Doc)</th>
-                            <th style="width: 12%;">제조일자</th>
-                            <th style="width: 16%;">할당 Lot</th>
-                            <th style="width: 9%;">유효기간</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="item in semiLotList" :key="item.id">
-                            <td>{{ item.division }}</td>
-                            <td style="white-space: nowrap;">{{ item.doc_name }}</td>
-                            <td style="white-space: nowrap;">{{ item.latest_doc_no }}</td>
-                            <td><input type="text" v-model="item.mfgDate" @input="onSemiMfgDateChange(item)" placeholder="예: 20260330" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc;"></td>
-                            <td><input type="text" v-model="item.calcLot" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-weight: 600; color: #4F46E5;"></td>
-                            <td style="font-weight: 500;">{{ item.expiryDate }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Division</th><th>문서명 (Doc Name)</th><th>최신문서</th><th>제조일자</th><th>할당 Lot</th><th>유효기간</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="item in semiLotList" :key="item.id">
+                                <td style="font-weight:700;">{{ item.division }}</td>
+                                <td style="font-size:0.85rem;">{{ item.doc_name }}</td>
+                                <td style="font-size:0.75rem; color:var(--text-muted);">{{ item.latest_doc_no }}</td>
+                                <td><input type="text" v-model="item.mfgDate" @input="onSemiMfgDateChange(item)" placeholder="예: 20260330" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:6px;"></td>
+                                <td style="font-weight:600; color:var(--primary);">{{ item.calcLot }}</td>
+                                <td>{{ item.expiryDate }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -615,27 +522,9 @@
 
     createApp({
         setup() {
-            const currentTab = ref('generator');
+            const currentTab = ref('upload-bom');
             
-            // --- BOM Generator State ---
-            const formulaFiles = ref([]);
-            const genConfig = reactive({
-                formulaFile: '',
-                targetQty: 96,
-                topLotNo: '',
-                mfgDate: new Date().toISOString().slice(0, 10),
-                requestTeam: '생산팀',
-                purpose: '정기생산'
-            });
-            const genResult = ref(null);
-            const isGenLoading = ref(false);
-            
-            // Level 1/2/3 설정 정보
-            const genLevelConfig = [
-                { key: 'level1', title: 'Level 1 (포장/완제품)', cls: 'lv1-header' },
-                { key: 'level2', title: 'Level 2 (반제품 제조)', cls: 'lv2-header' },
-                { key: 'level3', title: 'Level 3 (하위 조제)', cls: 'lv3-header' }
-            ];
+
 
             // --- BOM Viewer State ---
             const viewData = ref({ level0: [], level1: [], level2: [], level3: [], instruction_summary: [] });
@@ -661,62 +550,105 @@
                 purpose: ''
             });
 
-            // --- API Calls ---
-            const loadGeneratorFiles = async () => {
-                const res = await fetch('/api/lots');
-                const data = await res.json();
-                formulaFiles.value = data;
-                if (data.length > 0) genConfig.formulaFile = data[0].filename;
-            };
+            const isCsvLevel0Valid = computed(() => {
+                return csvLevel0.productName && csvLevel0.productCode && csvLevel0.lotNo &&
+                       csvLevel0.targetQty && csvLevel0.version && csvLevel0.mfgDate &&
+                       csvLevel0.requestTeam && csvLevel0.purpose;
+            });
 
-            const generateBom = async () => {
-                isGenLoading.value = true;
-                try {
-                    const res = await fetch('/api/generate_bom', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ formula_file: genConfig.formulaFile, target_qty: genConfig.targetQty })
-                    });
-                    const data = await res.json();
-                    if (data.error) alert(data.error);
-                    else genResult.value = data;
-                } finally {
-                    isGenLoading.value = false;
-                }
-            };
+            const applyLotHierarchy = () => {
+                const rows = csvRows.value;
+                if (!rows || rows.length === 0) return;
 
-            const downloadExcel = async () => {
-                if (!genResult.value) return;
-                const l0 = genResult.value.level0;
-                const payload = {
-                    level0: { 
-                        ...l0, 
-                        제품코드: l0.CodeNo, 
-                        topLotNo: genConfig.topLotNo,
-                        mfgDate: genConfig.mfgDate,
-                        requestTeam: genConfig.requestTeam,
-                        purpose: genConfig.purpose
-                    },
-                    level1: genResult.value.level1,
-                    level2: genResult.value.level2,
-                    level3: genResult.value.level3
+                const getVal = (row, keys) => {
+                    for (const k of keys) {
+                        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+                            return String(row[k]).trim();
+                        }
+                    }
+                    return '';
                 };
-                const res = await fetch('/api/download_excel', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+
+                const colMaps = {
+                    level: ['Level', '레벨', 'lvl'],
+                    parentLot: ['상위 Lot', '상위Lot', '상위 LOT', '상위LOT', '상위Lot ', 'Parent Lot', '상급Lot'],
+                    parentConn: ['상위 연결', '상위연결', '상위 연결(Code)', '상위연결(Code)', '상위 연결 ', 'Parent', '상위 연결(명칭)'],
+                    allocLot: ['할당 Lot', '할당Lot', '할당 LOT', '할당LOT', 'Lot No.', 'LotNo', '할당 Lot ', '할당 LOT NO'],
+                    codeNo: ['Code No.', 'CodeNo', '코드번호', '코드 No.', '품목코드', 'Code No. ', 'Code'],
+                    name: ['명칭 / 구성품', '명칭/구성품', '원재료명', '구성품 명칭', '품목명', 'Description', '명칭']
+                };
+
+                // Process Level 1 -> 2 -> 3
+                [1, 2, 3].forEach(currentLvl => {
+                    rows.forEach(row => {
+                        const l = parseInt(getVal(row, colMaps.level) || '0');
+                        if (l !== currentLvl) return;
+
+                        if (l === 1) {
+                            row['상위 Lot'] = csvLevel0.lotNo;
+                        } else {
+                            // Search key: Check '상위 연결' column first, then current '상위 Lot' column
+                            let pStr = getVal(row, colMaps.parentConn).toLowerCase();
+                            if (!pStr) pStr = getVal(row, colMaps.parentLot).toLowerCase();
+                            
+                            if (!pStr) return;
+
+                            const parentLvl = l - 1;
+                            const parent = rows.find(p => {
+                                const pl = parseInt(getVal(p, colMaps.level) || '0');
+                                if (pl !== parentLvl) return false;
+                                
+                                const pCode = getVal(p, colMaps.codeNo).toLowerCase();
+                                const pName = getVal(p, colMaps.name).toLowerCase();
+                                
+                                return pCode === pStr || pName === pStr || 
+                                       (pCode && pStr.includes(pCode)) || (pName && pStr.includes(pName)) ||
+                                       (pCode && pCode.includes(pStr)) || (pName && pName.includes(pStr));
+                            });
+
+                            if (parent) {
+                                let pAlloc = getVal(parent, colMaps.allocLot);
+                                if (pAlloc) {
+                                    row['상위 Lot'] = pAlloc;
+                                }
+                            }
+                        }
+                    });
                 });
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `BOM_Export_${l0.CodeNo}_${new Date().toISOString().slice(0,10)}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
+
+                // Special Rule for NC Item BCM005: Copy from PC
+                rows.forEach(row => {
+                    const l = parseInt(getVal(row, colMaps.level) || '0');
+                    const itemCode = getVal(row, colMaps.codeNo);
+                    const parentLot = getVal(row, colMaps.parentLot);
+
+                    if (l === 2 && itemCode === 'BCM005' && parentLot.toUpperCase().includes('NC')) {
+                        // Find matching PC row (same level, same code, but parent lot contains 'PC')
+                        const pcRow = rows.find(p => 
+                            parseInt(getVal(p, colMaps.level) || '0') === 2 && 
+                            getVal(p, colMaps.codeNo) === 'BCM005' && 
+                            getVal(p, colMaps.parentLot).toUpperCase().includes('PC')
+                        );
+
+                        if (pcRow) {
+                            row['할당 Lot'] = getVal(pcRow, colMaps.allocLot);
+                            row['유효기간'] = getVal(pcRow, colMaps.parentLot === '유효기간' ? ['유효기간'] : ['유효기간']); // Helper
+                            // Re-fetch expiry because it might be under '유효기간' key
+                            row['유효기간'] = pcRow['유효기간'] || '';
+                            
+                            // Set Qty to 0 and mark as special NC
+                            row['필요 수량'] = 0;
+                            row['할당수량'] = 0;
+                            row._isNCSpecial = true;
+                        }
+                    }
+                });
+                
+                csvRows.value = JSON.parse(JSON.stringify(rows));
+                alert('상위 Lot 계층 구조 및 NC 특수 로직(BCM005)이 적용되었습니다.');
             };
 
+            // --- API Calls ---
             // --- CSV 파싱 유틸 ---
             function parseCsvLine(line) {
                 const result = [];
@@ -766,13 +698,15 @@
                 return result;
             });
 
-            // 동일 항목(상위Lot+Code+명칭)의 복수 할당 Lot을 rowspan으로 그룹화
+            // 동일 항목(상위Lot+Code+명칭) 그룹화 및 시각적 상위 Lot 병합(LotSpan) 계산
             const csvByLevelGrouped = computed(() => {
                 const result = {};
                 Object.keys(csvByLevel.value).forEach(lvl => {
                     const rows = csvByLevel.value[lvl];
-                    const grouped = [];
+                    const groups = [];
                     let i = 0;
+                    
+                    // 1차 그룹화: 상위 Lot + Code + 명칭 (기존 로직 유지)
                     while (i < rows.length) {
                         const row = rows[i];
                         const key = `${row['상위 Lot']}|${row['Code No.']}|${row['명칭 / 구성품']}`;
@@ -782,10 +716,33 @@
                             const nk = `${rows[j]['상위 Lot']}|${rows[j]['Code No.']}|${rows[j]['명칭 / 구성품']}`;
                             if (nk === key) { group.push(rows[j]); j++; } else break;
                         }
-                        grouped.push({ rows: group, span: group.length });
+                        groups.push({ rows: group, span: group.length, lot: row['상위 Lot'] });
                         i = j;
                     }
-                    result[lvl] = grouped;
+
+                    // 2차 처리: 동일한 '상위 Lot'이 연속되는 그룹들을 찾아 rowspan(lotSpan) 계산
+                    let gIdx = 0;
+                    while (gIdx < groups.length) {
+                        const currentLot = groups[gIdx].lot;
+                        let totalRowsForLot = groups[gIdx].span;
+                        let nextGIdx = gIdx + 1;
+                        
+                        while (nextGIdx < groups.length && groups[nextGIdx].lot === currentLot) {
+                            totalRowsForLot += groups[nextGIdx].span;
+                            nextGIdx++;
+                        }
+                        
+                        groups[gIdx].isFirstInLot = true;
+                        groups[gIdx].lotSpan = totalRowsForLot;
+                        
+                        // 뒤따르는 동일 Lot 그룹들은 표시하지 않도록 설정
+                        for (let k = gIdx + 1; k < nextGIdx; k++) {
+                            groups[k].isFirstInLot = false;
+                        }
+                        gIdx = nextGIdx;
+                    }
+                    
+                    result[lvl] = groups;
                 });
                 return result;
             });
@@ -1059,13 +1016,11 @@
             };
 
             onMounted(() => {
-                loadGeneratorFiles();
                 loadViewerData();
             });
 
             return {
-                currentTab, formulaFiles, genConfig, genResult, isGenLoading, generateBom, downloadExcel,
-                genLevelConfig,
+                currentTab, 
                 viewData, isViewLoading, selectedViewLot, currentL0, displayL0Info, selectViewLot,
                 filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
                 showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
@@ -1073,7 +1028,8 @@
                 csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
                 csvCompletedCount, csvShortageCount,
                 triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
-                showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots
+                showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,
+                isCsvLevel0Valid, applyLotHierarchy
             };
         }
     }).mount('#app');
