@@ -41,6 +41,32 @@ def get_bom_all():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/item_master/<code_no>')
+def get_item_master(code_no):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM item_master WHERE code_no = ?", (code_no,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return jsonify(dict(row))
+        return jsonify({"error": "Not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/doc_master/<code_no>')
+def get_doc_master(code_no):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM instruction_doc_master WHERE code_no = ?", (code_no,))
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([dict(row) for row in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # --- BOM 생성 (Generator) API ---
 @app.route('/api/lots')
 def get_lots():

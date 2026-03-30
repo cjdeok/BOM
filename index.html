@@ -7,6 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #4F46E5; /* Indigo */
@@ -121,6 +122,29 @@
         .loading-spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px; gap: 15px; color: var(--secondary); }
         .spinner { width: 40px; height: 40px; border: 4px solid rgba(0,0,0,0.1); border-top-color: var(--secondary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ===== BOM 불출 현황 탭 스타일 ===== */
+        .upload-zone { border: 2px dashed #C7D2FE; border-radius: 16px; padding: 60px 40px; text-align: center; cursor: pointer; transition: all 0.3s; background: #FAFBFF; position: relative; }
+        .upload-zone:hover { border-color: var(--primary); background: #EEF2FF; }
+        .upload-zone.drag-over { border-color: var(--primary); background: #EEF2FF; box-shadow: 0 0 0 4px rgba(79,70,229,0.1); }
+        .upload-icon { font-size: 3rem; margin-bottom: 14px; display: block; }
+        .upload-btn-fake { display: inline-block; margin-top: 18px; padding: 10px 28px; background: var(--primary); color: white; border-radius: 8px; font-weight: 600; font-size: 0.9rem; transition: background 0.2s; }
+        .upload-zone:hover .upload-btn-fake { background: var(--primary-dark); }
+        .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .summary-card { background: white; border-radius: 12px; padding: 18px 22px; border: 1px solid var(--border); display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: box-shadow 0.2s; }
+        .summary-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .sc-icon { font-size: 2rem; flex-shrink: 0; }
+        .sc-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .sc-value { font-size: 1.6rem; font-weight: 800; color: var(--text-main); line-height: 1; }
+        .sc-unit { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+        .bom-result-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+        .bom-result-title { font-size: 1.1rem; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+        .bom-result-subtitle { color: var(--text-muted); font-size: 0.82rem; margin-top: 4px; }
+        .btn-gray { background: #6B7280; color: white; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+        .btn-gray:hover { background: #4B5563; }
+        .expiry-near { color: #D97706; font-weight: 600; }
+        .status-badge-ok { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; background: #D1FAE5; color: #065F46; white-space: nowrap; }
+        .status-badge-shortage { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; background: #FEE2E2; color: #991B1B; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -136,6 +160,9 @@
             </div>
             <div :class="['nav-tab', { active: currentTab === 'viewer' }]" @click="currentTab = 'viewer'">
                 <i class="fas fa-search"></i> BOM 조회
+            </div>
+            <div :class="['nav-tab', { active: currentTab === 'upload-bom' }]" @click="currentTab = 'upload-bom'">
+                <i class="fas fa-clipboard-list"></i> BOM 불출 현황
             </div>
         </div>
     </div>
@@ -154,7 +181,7 @@
                 </div>
                 <div class="form-group">
                     <label>생산량</label>
-                    <input type="number" v-model="genConfig.targetQty" placeholder="예: 1000">
+                    <input type="number" v-model="genConfig.targetQty" placeholder="예: 96">
                 </div>
                 <div class="form-group">
                     <label>Lot No.</label>
@@ -365,6 +392,141 @@
                 </div>
             </template>
         </div>
+
+        <!-- TAB 3: BOM 불출 현황 (CSV Upload) -->
+        <div v-if="currentTab === 'upload-bom'">
+            <!-- 파일 미로드 상태: 업로드 영역 -->
+            <div class="card" v-if="!csvRows.length">
+                <h2 class="section-title"><i class="fas fa-clipboard-list"></i> BOM 불출 현황 — CSV 파일 업로드</h2>
+                <p style="margin-bottom: 20px; color: #6b7280; font-size: 0.95rem;">
+                    생산관리 통합관리 -> 생산관리 -> 생산지시 생성된 BOM 할당량 CSV 업로드
+                </p>
+                <div class="upload-zone"
+                     :class="{ 'drag-over': isDragOver }"
+                     @click="triggerCsvInput"
+                     @dragover.prevent="isDragOver = true"
+                     @dragleave="isDragOver = false"
+                     @drop.prevent="handleCsvDrop">
+                    <span class="upload-icon">📂</span>
+                    <p style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 6px;">CSV 파일을 여기에 드래그하거나 클릭하여 선택하세요</p>
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">형식: BCEXX_BOM_수량_생성일자.csv (UTF-8 또는 EUC-KR 자동 감지)</p>
+                    <div class="upload-btn-fake"><i class="fas fa-folder-open"></i> 파일 선택</div>
+                </div>
+                <input type="file" ref="csvInput" accept=".csv" style="display:none" @change="handleCsvFile">
+            </div>
+
+            <!-- 로드 완료 상태: 결과 표시 -->
+            <div v-if="csvRows.length">
+                <!-- 결과 헤더 -->
+                <div class="card" style="padding: 20px 24px;">
+                    <div class="bom-result-header">
+                        <div>
+                            <div class="bom-result-title">
+                                <i class="fas fa-file-csv" style="color: var(--primary);"></i>
+                                {{ csvFileName }}
+                            </div>
+                            <div class="bom-result-subtitle">상태에 관계없이 모든 구성품을 표시합니다</div>
+                        </div>
+                        <div style="display: flex; gap: 10px; flex-wrap: nowrap; align-items: center;">
+                            <button class="btn-primary" style="width: auto; padding: 8px 18px; font-size: 0.85rem; white-space: nowrap;" @click="openSemiLotModal"><i class="fas fa-edit"></i> 반제품 Lot 생성</button>
+                            <button class="btn-success" style="white-space: nowrap;" @click="downloadCsvResult"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
+                            <button class="btn-gray" style="white-space: nowrap;" @click="resetCsv"><i class="fas fa-redo"></i> 다시 불러오기</button>
+                        </div>
+                    </div>
+
+                    <!-- Level 0 입력 폼 -->
+                    <div class="gen-level-section" style="border: 2px solid #6366F1; margin-top: 16px; margin-bottom: 0;">
+                        <div class="gen-level-header lv0-header">
+                            <span><i class="fas fa-layer-group" style="margin-right: 6px;"></i>Level 0 &nbsp;&nbsp;생산 정보 입력</span>
+                            <span style="font-size: 0.8rem; font-weight: 400; opacity: 0.8;">각 항목을 입력하세요</span>
+                        </div>
+                        <div style="padding: 16px 20px;">
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>제품명</label>
+                                    <input type="text" v-model="csvLevel0.productName" placeholder="제품명 입력">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>제품 Code No.</label>
+                                    <input type="text" v-model="csvLevel0.productCode" placeholder="예: DX-001">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>생산 Lot No.</label>
+                                    <input type="text" v-model="csvLevel0.lotNo" placeholder="예: LOT20260330">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>목표 수량</label>
+                                    <input type="number" v-model="csvLevel0.targetQty" placeholder="예: 96">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>제품버전</label>
+                                    <input type="text" v-model="csvLevel0.version" placeholder="예: 1.0">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>제조일자</label>
+                                    <input type="text" v-model="csvLevel0.mfgDate" placeholder="예: 2026-03-30">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>의뢰팀</label>
+                                    <input type="text" v-model="csvLevel0.requestTeam" placeholder="예: 생산1팀">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>생산목적</label>
+                                    <input type="text" v-model="csvLevel0.purpose" placeholder="예: 정기생산">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 레벨별 테이블 -->
+                <template v-for="lvl in [1, 2, 3]" :key="lvl">
+                    <div v-if="csvByLevel[lvl] && csvByLevel[lvl].length > 0" class="gen-level-section" style="margin-bottom: 20px;">
+                        <div :class="'gen-level-header ' + ['lv1-header','lv2-header','lv3-header'][lvl-1]">
+                            <span>Level {{ lvl }} <span style="font-weight:400; font-size:0.82rem; opacity:0.8;">{{ lvl === 1 ? '(구성품 / 포장재)' : lvl === 2 ? '(반제품 원재료)' : '(하위 원재료)' }}</span></span>
+                            <span style="font-size: 0.8rem; font-weight: 400;">{{ csvByLevelGrouped[lvl] ? csvByLevelGrouped[lvl].length : 0 }} 항목 ({{ csvByLevel[lvl] ? csvByLevel[lvl].length : 0 }} 행)</span>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="table-layout: fixed; min-width: 900px;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 12%;">상위 Lot</th>
+                                        <th style="width: 12%;">Code No.</th>
+                                        <th style="width: 26%;">명칭 / 구성품</th>
+                                        <th style="width: 9%; text-align:right;">필요 수량</th>
+                                        <th style="width: 6%;">단위</th>
+                                        <th style="width: 20%;">할당 Lot</th>
+                                        <th style="width: 11%;">유효기간</th>
+                                        <th style="width: 9%; text-align:right;">할당수량</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template v-for="(group, gIdx) in csvByLevelGrouped[lvl]" :key="gIdx">
+                                        <!-- 그룹 첫 번째 행: 앞 5칼 rowspan 적용 -->
+                                        <tr>
+                                            <td :rowspan="group.span" style="font-size: 0.78rem; color: #6B7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;" :title="group.rows[0]['상위 Lot']">{{ group.rows[0]['상위 Lot'] }}</td>
+                                            <td :rowspan="group.span" style="vertical-align:middle;"><b style="font-size: 0.88rem;">{{ group.rows[0]['Code No.'] }}</b></td>
+                                            <td :rowspan="group.span" :title="group.rows[0]['명칭 / 구성품']" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; vertical-align:middle;">{{ group.rows[0]['명칭 / 구성품'] }}</td>
+                                            <td :rowspan="group.span" style="text-align:right; color:#374151; vertical-align:middle;">{{ group.rows[0]['필요 수량'] }}</td>
+                                            <td :rowspan="group.span" style="color:#6B7280; font-size:0.82rem; vertical-align:middle;">{{ group.rows[0]['단위'] }}</td>
+                                            <td style="font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="group.rows[0]['할당 Lot']">{{ group.rows[0]['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(group.rows[0]['유효기간']) }" style="font-size:0.82rem;">{{ group.rows[0]['유효기간'] }}</td>
+                                            <td style="text-align:right; color:#4F46E5; font-weight:700;">{{ group.rows[0]['할당수량'] }}</td>
+                                        </tr>
+                                        <!-- 추가 할당 Lot 행 (앞 5칼 없음) -->
+                                        <tr v-for="(row, rIdx) in group.rows.slice(1)" :key="rIdx" style="background: #FAFBFF;">
+                                            <td style="font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-left: 3px solid #E0E7FF;" :title="row['할당 Lot']">{{ row['할당 Lot'] }}</td>
+                                            <td :class="{ 'expiry-near': isExpiryNear(row['유효기간']) }" style="font-size:0.82rem;">{{ row['유효기간'] }}</td>
+                                            <td style="text-align:right; color:#4F46E5; font-weight:700;">{{ row['할당수량'] }}</td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
     </div>
 
     <!-- Modals -->
@@ -409,6 +571,43 @@
             </div>
         </div>
     </div>
+
+    <!-- Semi Lot Modal -->
+    <div class="modal-overlay" v-if="showSemiLotModal" @click.self="showSemiLotModal = false">
+        <div class="modal-box" style="max-width: 1400px;">
+            <div class="modal-header">
+                <h3>🔖 반제품 Lot. 생성 — {{ csvLevel0.productCode }}</h3>
+                <div>
+                    <button class="btn-primary" @click="applySemiLots" style="padding: 6px 16px; margin-right: 15px; font-size: 0.85rem; width: auto;"><i class="fas fa-check"></i> 일괄 적용</button>
+                    <button @click="showSemiLotModal = false" style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:#6b7280;">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 6%;">Division</th>
+                            <th style="white-space: nowrap;">문서명 (Doc Name)</th>
+                            <th style="white-space: nowrap;">최신문서 (Latest Doc)</th>
+                            <th style="width: 12%;">제조일자</th>
+                            <th style="width: 16%;">할당 Lot</th>
+                            <th style="width: 9%;">유효기간</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="item in semiLotList" :key="item.id">
+                            <td>{{ item.division }}</td>
+                            <td style="white-space: nowrap;">{{ item.doc_name }}</td>
+                            <td style="white-space: nowrap;">{{ item.latest_doc_no }}</td>
+                            <td><input type="text" v-model="item.mfgDate" @input="onSemiMfgDateChange(item)" placeholder="예: 20260330" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc;"></td>
+                            <td><input type="text" v-model="item.calcLot" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-weight: 600; color: #4F46E5;"></td>
+                            <td style="font-weight: 500;">{{ item.expiryDate }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -422,7 +621,7 @@
             const formulaFiles = ref([]);
             const genConfig = reactive({
                 formulaFile: '',
-                targetQty: 1000,
+                targetQty: 96,
                 topLotNo: '',
                 mfgDate: new Date().toISOString().slice(0, 10),
                 requestTeam: '생산팀',
@@ -445,6 +644,22 @@
             const openViewItems = ref(new Set());
             const showSemiModal = ref(false);
             const showRawModal = ref(false);
+
+            // --- CSV Upload State ---
+            const csvRows = ref([]);
+            const csvFileName = ref('');
+            const isDragOver = ref(false);
+            const csvInput = ref(null);
+            const csvLevel0 = reactive({
+                productName: '',
+                productCode: '',
+                lotNo: '',
+                targetQty: '',
+                version: '',
+                mfgDate: new Date().toISOString().slice(0, 10),
+                requestTeam: '',
+                purpose: ''
+            });
 
             // --- API Calls ---
             const loadGeneratorFiles = async () => {
@@ -500,6 +715,147 @@
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
+            };
+
+            // --- CSV 파싱 유틸 ---
+            function parseCsvLine(line) {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') {
+                        if (!inQuotes) { inQuotes = true; }
+                        else if (line[i + 1] === '"') { current += '"'; i++; }
+                        else { inQuotes = false; }
+                    } else if (ch === ',' && !inQuotes) {
+                        result.push(current); current = '';
+                    } else { current += ch; }
+                }
+                result.push(current);
+                return result;
+            }
+
+            function cleanVal(v) {
+                // Excel 수식 포맷 제거: =" value" → value, =value → value
+                return String(v || '').replace(/^="(.*)"$/, '$1').replace(/^=(.+)$/, '$1').trim();
+            }
+
+            function parseCsvText(text) {
+                const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+                if (lines.length < 2) return [];
+                const headers = parseCsvLine(lines[0]).map(h => cleanVal(h));
+                return lines.slice(1).map(line => {
+                    const vals = parseCsvLine(line);
+                    const row = {};
+                    headers.forEach((h, i) => { row[h] = cleanVal(vals[i] || ''); });
+                    return row;
+                }).filter(r => headers.some(h => r[h]));
+            }
+
+            // CSV computed - 상태에 관계없이 전체 행 표시
+            const csvFiltered = computed(() => csvRows.value);
+            const csvCompletedCount = computed(() => csvRows.value.filter(r => r['상태'] === '할당 완료').length);
+            const csvShortageCount = computed(() => csvRows.value.filter(r => r['상태'] === '부족').length);
+            const csvByLevel = computed(() => {
+                const result = {};
+                csvFiltered.value.forEach(r => {
+                    const lvl = parseInt(r['Level']);
+                    if (!isNaN(lvl)) { if (!result[lvl]) result[lvl] = []; result[lvl].push(r); }
+                });
+                return result;
+            });
+
+            // 동일 항목(상위Lot+Code+명칭)의 복수 할당 Lot을 rowspan으로 그룹화
+            const csvByLevelGrouped = computed(() => {
+                const result = {};
+                Object.keys(csvByLevel.value).forEach(lvl => {
+                    const rows = csvByLevel.value[lvl];
+                    const grouped = [];
+                    let i = 0;
+                    while (i < rows.length) {
+                        const row = rows[i];
+                        const key = `${row['상위 Lot']}|${row['Code No.']}|${row['명칭 / 구성품']}`;
+                        const group = [row];
+                        let j = i + 1;
+                        while (j < rows.length) {
+                            const nk = `${rows[j]['상위 Lot']}|${rows[j]['Code No.']}|${rows[j]['명칭 / 구성품']}`;
+                            if (nk === key) { group.push(rows[j]); j++; } else break;
+                        }
+                        grouped.push({ rows: group, span: group.length });
+                        i = j;
+                    }
+                    result[lvl] = grouped;
+                });
+                return result;
+            });
+
+            const isExpiryNear = (dateStr) => {
+                if (!dateStr) return false;
+                const d = new Date(dateStr);
+                if (isNaN(d)) return false;
+                const diffDays = (d - new Date()) / (1000 * 60 * 60 * 24);
+                return diffDays > 0 && diffDays < 180;
+            };
+
+            // CSV 파일 로드
+            const loadCsvFile = (file) => {
+                csvFileName.value = file.name;
+                
+                // 파일명 파싱 처리
+                const filename = file.name;
+                const codeNo = filename.substring(0, 5); // 파일명 첫 5자리
+                const parts = filename.split('_');
+                let targetQty = '';
+                if (parts.length >= 3) {
+                    targetQty = parts[2]; // 두번째 "_" 와 세번째 "_" 사이 값
+                }
+                
+                // item_master 데이터 조회 후 설정
+                fetch(`/api/item_master/${codeNo}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && !data.error) {
+                            csvLevel0.productCode = data.code_no || codeNo;
+                            csvLevel0.productName = data.description || '';
+                            csvLevel0.targetQty = targetQty;
+                        } else {
+                            csvLevel0.productCode = codeNo;
+                            csvLevel0.targetQty = targetQty;
+                        }
+                    })
+                    .catch(e => console.error('item_master fetch error:', e));
+
+                const tryParse = (encoding) => new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(parseCsvText(e.target.result));
+                    reader.readAsText(file, encoding);
+                });
+                tryParse('UTF-8').then(rows => {
+                    if (rows.length > 0 && rows[0]['상태']) {
+                        csvRows.value = rows;
+                    } else {
+                        tryParse('EUC-KR').then(rows2 => { csvRows.value = rows2; });
+                    }
+                });
+            };
+
+            const triggerCsvInput = () => { if (csvInput.value) csvInput.value.click(); };
+            const handleCsvDrop = (e) => { isDragOver.value = false; const f = e.dataTransfer.files[0]; if (f) loadCsvFile(f); };
+            const handleCsvFile = (e) => { const f = e.target.files[0]; if (f) loadCsvFile(f); };
+            const resetCsv = () => { csvRows.value = []; csvFileName.value = ''; };
+
+            const downloadCsvResult = () => {
+                if (!csvFiltered.value.length || typeof XLSX === 'undefined') return;
+                const headers = ['Level', '상위 Lot', 'Code No.', '명칭 / 구성품', '필요 수량', '단위', '할당 Lot', '유효기간', '할당수량'];
+                const wsData = [headers, ...csvFiltered.value.map(r => headers.map(h => r[h] || ''))];
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const colWidths = [10, 16, 12, 28, 10, 6, 22, 12, 10, 8];
+                ws['!cols'] = colWidths.map(w => ({ wch: w }));
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'BOM_불출현황');
+                const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                XLSX.writeFile(wb, `BOM_불출현황_${date}.xlsx`);
             };
 
             const loadViewerData = async () => {
@@ -603,6 +959,105 @@
                 return res.sort((a,b) => a.code.localeCompare(b.code));
             });
 
+            // --- 반제품 Lot Modal Logic ---
+            const showSemiLotModal = ref(false);
+            const semiLotList = ref([]);
+
+            const parseDateInput = (val) => {
+                if (!val) return null;
+                const s = String(val).replace(/\D/g, '');
+                if (s.length === 8) {
+                    return new Date(`${s.substring(0,4)}-${s.substring(4,6)}-${s.substring(6,8)}`);
+                } else if (s.length === 6) {
+                    return new Date(`20${s.substring(0,2)}-${s.substring(2,4)}-${s.substring(4,6)}`);
+                }
+                const d = new Date(val);
+                return isNaN(d) ? null : d;
+            };
+
+            const calcSemiLot = (mfgDate, division, docNo) => {
+                if (!mfgDate || !division || !docNo) return '';
+                try {
+                    const dateObj = parseDateInput(mfgDate);
+                    if (!dateObj || isNaN(dateObj)) return '';
+                    const yy = String(dateObj.getFullYear()).slice(-2);
+                    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const dd = String(dateObj.getDate()).padStart(2, '0');
+                    const textDate = `${mm}${dd}${yy}`;
+
+                    const divM1 = String(division).substring(3, 5);
+                    const divM2 = String(division).substring(0, 2);
+
+                    const docM = String(docNo).substring(19, 21);
+                    const docR = String(docNo).slice(-2);
+                    
+                    return `${textDate}-${divM1}${divM2}-${docM}${docR}`;
+                } catch(e) { return ''; }
+            };
+
+            const calcExpiryDate = (mfgDate) => {
+                if (!mfgDate) return '';
+                const d = parseDateInput(mfgDate);
+                if (!d || isNaN(d)) return '';
+                d.setMonth(d.getMonth() + 13);
+                d.setDate(d.getDate() - 1);
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            };
+
+            const openSemiLotModal = async () => {
+                if (!csvLevel0.productCode) {
+                    alert("먼저 Level 0의 제품 Code No.를 확인해주세요.");
+                    return;
+                }
+                try {
+                    const res = await fetch(`/api/doc_master/${csvLevel0.productCode}`);
+                    const data = await res.json();
+                    if (data && data.length) {
+                        const filteredData = data.filter(d => {
+                            const div = String(d.division || '').toUpperCase();
+                            return !div.startsWith('LA') && !div.startsWith('PI');
+                        });
+                        semiLotList.value = filteredData.map(d => ({
+                            ...d, mfgDate: '', calcLot: '', expiryDate: ''
+                        }));
+                        showSemiLotModal.value = true;
+                    } else {
+                        alert('해당 Code No.에 대한 반제품 제조지침서를 찾을 수 없습니다.');
+                    }
+                } catch (e) {
+                    alert('데이터 로드 실패: ' + e);
+                }
+            };
+
+            const onSemiMfgDateChange = (item) => {
+                if (item.mfgDate) {
+                    item.calcLot = calcSemiLot(item.mfgDate, item.division, item.latest_doc_no);
+                    item.expiryDate = calcExpiryDate(item.mfgDate);
+                } else {
+                    item.calcLot = '';
+                    item.expiryDate = '';
+                }
+            };
+
+            const applySemiLots = () => {
+                semiLotList.value.forEach(semi => {
+                    if (!semi.calcLot && !semi.expiryDate) return;
+                    
+                    csvRows.value.forEach(row => {
+                        if (String(row['Code No.'] || '').trim().toUpperCase() === String(semi.division || '').trim().toUpperCase()) {
+                            if (semi.calcLot) row['할당 Lot'] = semi.calcLot;
+                            if (semi.expiryDate) row['유효기간'] = semi.expiryDate;
+                            if (row['필요 수량']) row['할당수량'] = row['필요 수량'];
+                        }
+                    });
+                });
+                alert('일괄 적용되었습니다.');
+                showSemiLotModal.value = false;
+            };
+
             onMounted(() => {
                 loadGeneratorFiles();
                 loadViewerData();
@@ -613,7 +1068,12 @@
                 genLevelConfig,
                 viewData, isViewLoading, selectedViewLot, currentL0, displayL0Info, selectViewLot,
                 filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
-                showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials
+                showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
+                // CSV Upload Tab
+                csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
+                csvCompletedCount, csvShortageCount,
+                triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
+                showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots
             };
         }
     }).mount('#app');
