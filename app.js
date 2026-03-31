@@ -99,6 +99,7 @@ createApp({
         const historyLots = ref([]);
         const selectedHistoryLot = ref('');
         const historyDetail = ref(null);
+
         const historyDepth = ref(3); // 기본값: Level 3까지 모두 보기
 
         const setHistoryDepth = (depth) => {
@@ -207,9 +208,14 @@ createApp({
         const historyPiList = computed(() => {
             if (!historyDetail.value) return [];
             const sum = historyDetail.value.instruction_summary || [];
-            // DB 필드명 "약어", "제조지침서 No." 사용
-            return sum.filter(s => (s['약어'] || s['division'] || '').toUpperCase().includes('PI'))
-                      .map(s => ({ label: 'PI', latestDocNo: s['제조지침서 No.'] || s['latest_doc_no'] }));
+            // DB 필드명 "약어", "제조지침서 No." 사용 (FI 또는 PI 포함 시 완제품으로 간주)
+            return sum.filter(s => {
+                const div = (s['약어'] || s['division'] || '').toUpperCase();
+                return div.includes('PI') || div.includes('FI');
+            }).map(s => ({ 
+                label: 'PI', 
+                latestDocNo: s['제조지침서 No.'] || s['latest_doc_no'] 
+            }));
         });
 
         const historySemiLotList = computed(() => {
@@ -217,7 +223,8 @@ createApp({
             const sum = historyDetail.value.instruction_summary || [];
             return sum.filter(s => {
                 const div = (s['약어'] || s['division'] || '').toUpperCase();
-                return div && !div.includes('PI');
+                // PI, FI, LA 제외 항목을 반제품으로 처리
+                return div && !div.includes('PI') && !div.includes('FI') && !div.includes('LA');
             }).map(s => ({
                 division: s['약어'] || s['division'],
                 calcLot: s['Lot. No.'] || s['calcLot'] || s['calc_lot']
@@ -575,7 +582,7 @@ createApp({
             return String(str).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
         };
 
-        const groupItems = (items, keyCols, valCols) => {
+        const groupItems = (items, keyCols, valCols, numCols = []) => {
             if (!items || !items.length) return [];
             const groups = new Map();
             items.forEach(item => {
@@ -583,35 +590,51 @@ createApp({
                 if (!groups.has(key)) {
                     const g = { ...item };
                     valCols.forEach(c => { g[c] = String(item[c] || '').trim(); });
+                    numCols.forEach(c => { 
+                        const v = parseFloat(String(item[c] || '0').replace(/,/g, ''));
+                        g[`_sum_${c}`] = isNaN(v) ? 0 : v;
+                    });
                     groups.set(key, g);
                 } else {
                     const g = groups.get(key);
                     valCols.forEach(c => { 
                         const v = String(item[c] || '').trim();
-                        if (v && !String(g[c]).includes(v)) {
+                        const currentV = String(g[c] || '').trim();
+                        // 동일한 값이 이미 들어있지 않은 경우에만 추가 (Lot No. 등이 중복되지 않게)
+                        if (v && !currentV.split('\n').includes(v)) {
                             g[c] += '\n' + v; 
                         }
                     });
+                    numCols.forEach(c => {
+                        const v = parseFloat(String(item[c] || '0').replace(/,/g, ''));
+                        g[`_sum_${c}`] += isNaN(v) ? 0 : v;
+                    });
                 }
             });
-            return Array.from(groups.values());
+            const result = Array.from(groups.values());
+            result.forEach(g => {
+                numCols.forEach(c => {
+                    g[`_sum_${c}`] = Math.round(g[`_sum_${c}`] * 1000) / 1000;
+                });
+            });
+            return result;
         };
 
         const filteredL1 = computed(() => {
             const l1 = viewData.value.level1.filter(i => i['상위Lot'] === selectedViewLot.value);
-            return groupItems(l1, ['코드번호', '구성품 명칭'], ['Lot No.', '제조일자', '유효기간', '포장시 요구량']);
+            return groupItems(l1, ['코드번호', '구성품 명칭'], ['Lot No.', '제조일자', '유효기간', '포장시 요구량'], ['포장시 요구량']);
         });
 
         const getL2SubItems = (l1LotStr) => {
             const lots = splitLines(l1LotStr);
             const l2 = viewData.value.level2.filter(i => lots.includes(i['상위Lot']));
-            return groupItems(l2, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량']);
+            return groupItems(l2, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량'], ['제조량']);
         };
 
         const getL3SubItems = (l2Items) => {
             const l2Lots = l2Items.flatMap(i => splitLines(i['Lot No.']));
             const l3 = viewData.value.level3.filter(i => l2Lots.includes(i['상위Lot']));
-            return groupItems(l3, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량']);
+            return groupItems(l3, ['상위Lot', '코드번호', '원재료명', '제조사'], ['Lot No.', '제조일자', '유효기간', '제조량'], ['제조량']);
         };
 
         const hasChildren = (l1LotStr) => {

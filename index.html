@@ -102,23 +102,26 @@
                         </div>
                         <div style="background: #FDFDFF;">
                             <div v-for="l1 in filteredL1" :key="l1.ID" style="border-bottom: 1px solid var(--border);">
-                                <div class="accordion-header" @click="hasChildren(l1['Lot No.']) && toggleOpen(l1.ID)" :style="{ cursor: hasChildren(l1['Lot No.']) ? 'pointer' : 'default' }">
+                                <div class="accordion-header" @click="toggleOpen(l1.ID)" style="cursor: pointer;">
                                     <div v-if="hasChildren(l1['Lot No.'])" class="toggle-icon" :class="{ open: isOpen(l1.ID) }"><i class="fas fa-chevron-right"></i></div>
+                                    <div v-else class="toggle-icon" style="opacity: 0.2;"><i class="fas fa-circle" style="font-size: 0.4rem;"></i></div>
                                     <div style="display: flex; justify-content: space-between; flex: 1; align-items: center; padding-left: 10px;">
-                                        <div style="display: flex; gap: 20px; align-items: center;">
+                                        <div style="display: flex; gap: 24px; align-items: center;">
                                             <span class="badge badge-blue">LV1</span>
                                             <b style="font-size: 0.95rem;">{{ l1['Code No.'] || l1['코드번호'] }}</b>
                                             <span style="font-weight: 500;">{{ l1['명칭 / 구성품'] || l1['구성품 명칭'] }}</span>
                                         </div>
-                                        <div style="display: flex; gap: 30px; font-size: 0.85rem; color: var(--text-muted);">
-                                            <span>요구량: <b style="color: var(--text-main);">{{ l1['포장시 요구량'] }}</b></span>
-                                            <span>Lot: <b style="color: var(--primary);">{{ splitLines(l1['Lot No.']).length }}개</b></span>
+                                        <div style="display: flex; gap: 0; font-size: 0.85rem; color: var(--text-muted); align-items: center;">
+                                            <div style="width: 80px; white-space: nowrap;">사용량: <b style="color: var(--text-main);">{{ l1['_sum_포장시 요구량'] }}</b></div>
+                                            <div style="width: 280px; white-space: nowrap;">할당 LOT: <b style="color: var(--primary); white-space: pre-line; display: inline-block; vertical-align: top;">{{ l1['Lot No.'] }}</b></div>
+                                            <div style="width: 100px; white-space: nowrap;">할당 수량: <b style="color: var(--primary); white-space: pre-line; display: inline-block; vertical-align: top;">{{ l1['포장시 요구량'] }}</b></div>
+                                            <div style="width: 150px; white-space: nowrap;">유효기간: <b :class="{ 'expiry-near': isExpiryNear(l1['유효기간']) }" style="white-space: pre-line; display: inline-block; vertical-align: top;">{{ l1['유효기간'] }}</b></div>
                                         </div>
                                     </div>
                                 </div>
                                 <div v-if="isOpen(l1.ID)" class="card-body" style="background: #FCFDFF; padding: 0 32px 32px 64px; border-top: 1px solid #F1F5F9;">
                                     <!-- Level 2 테이블 -->
-                                    <template v-if="viewDepth >= 2 && getL2SubItems(l1['Lot No.']).length > 0">
+                                    <template v-if="getL2SubItems(l1['Lot No.']).length > 0">
                                         <div class="sub-table-label">
                                             Level 2 원재료 상세
                                         </div>
@@ -128,9 +131,10 @@
                                                     <tr>
                                                         <th style="width:150px; white-space: nowrap;">상위 Lot</th>
                                                         <th style="width:110px;">Code</th>
-                                                        <th style="width: auto;">품목명</th>
+                                                        <th style="width: 250px;">품목명</th>
                                                         <th style="width:100px; text-align:right;">사용량</th>
-                                                        <th style="width:200px; white-space: nowrap;">할당 Lot</th>
+                                                        <th style="width: auto; white-space: nowrap;">할당 Lot</th>
+                                                        <th style="width:100px; text-align:right;">할당 수량</th>
                                                         <th style="width:110px; white-space: nowrap;">유효기간</th>
                                                     </tr>
                                                 </thead>
@@ -139,9 +143,10 @@
                                                         <td style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l2['상위Lot'] }}</td>
                                                         <td style="font-weight: 700;">{{ l2['코드번호'] }}</td>
                                                         <td style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ l2['원재료명'] }}</td>
-                                                        <td style="text-align:right;">{{ l2['제조량'] }}</td>
-                                                        <td style="color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l2['Lot No.'] }}</td>
-                                                        <td :class="{ 'expiry-near': isExpiryNear(l2['유효기간']) }" style="white-space: nowrap;">{{ l2['유효기간'] }}</td>
+                                                        <td style="text-align:right; font-weight: 700; color: var(--text-main);">{{ l2['_sum_제조량'] }}</td>
+                                                        <td style="color: var(--primary); font-weight: 600; white-space: pre-line; line-height: 1.5;">{{ l2['Lot No.'] }}</td>
+                                                        <td style="text-align:right; color: var(--primary); font-weight: 600; white-space: pre-line; line-height: 1.5;">{{ l2['제조량'] }}</td>
+                                                        <td :class="{ 'expiry-near': isExpiryNear(l2['유효기간']) }" style="white-space: pre-line; line-height: 1.5;">{{ l2['유효기간'] }}</td>
                                                     </tr>
                                                 </tbody>
                                             </table>
@@ -149,7 +154,7 @@
                                     </template>
 
                                     <!-- Level 3 테이블 -->
-                                    <template v-if="viewDepth >= 3 && getL3SubItems(getL2SubItems(l1['Lot No.'])).length > 0">
+                                    <template v-if="getL3SubItems(getL2SubItems(l1['Lot No.'])).length > 0">
                                         <div class="sub-table-label l3-label">
                                             Level 3 하위 원재료
                                         </div>
@@ -159,9 +164,10 @@
                                                     <tr>
                                                         <th style="width:150px; white-space: nowrap;">상위 Lot</th>
                                                         <th style="width:110px;">Code</th>
-                                                        <th style="width: auto;">품목명</th>
+                                                        <th style="width: 250px;">품목명</th>
                                                         <th style="width:100px; text-align:right;">사용량</th>
-                                                        <th style="width:200px; white-space: nowrap;">할당 Lot</th>
+                                                        <th style="width: auto; white-space: nowrap;">할당 Lot</th>
+                                                        <th style="width:100px; text-align:right;">할당 수량</th>
                                                         <th style="width:110px; white-space: nowrap;">유효기간</th>
                                                     </tr>
                                                 </thead>
@@ -170,9 +176,10 @@
                                                     <td style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l3['상위Lot'] }}</td>
                                                     <td style="font-weight: 700;">{{ l3['코드번호'] }}</td>
                                                     <td style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ l3['원재료명'] }}</td>
-                                                    <td style="text-align:right;">{{ l3['제조량'] }}</td>
-                                                    <td style="color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ l3['Lot No.'] }}</td>
-                                                    <td :class="{ 'expiry-near': isExpiryNear(l3['유효기간']) }" style="white-space: nowrap;">{{ l3['유효기간'] }}</td>
+                                                    <td style="text-align:right; font-weight: 700; color: var(--text-main);">{{ l3['_sum_제조량'] }}</td>
+                                                    <td style="color: var(--primary); font-weight: 600; white-space: pre-line; line-height: 1.5;">{{ l3['Lot No.'] }}</td>
+                                                    <td style="text-align:right; color: var(--primary); font-weight: 600; white-space: pre-line; line-height: 1.5;">{{ l3['제조량'] }}</td>
+                                                    <td :class="{ 'expiry-near': isExpiryNear(l3['유효기간']) }" style="white-space: pre-line; line-height: 1.5;">{{ l3['유효기간'] }}</td>
                                                 </tr>
                                                 </tbody>
                                             </table>
@@ -433,7 +440,7 @@
                                                         <td v-if="i1 === 0" :rowspan="g1.span" style="font-weight:600;">{{ r1['구성품 명칭'] || r1['명칭 / 구성품'] }}</td>
                                                         <td v-if="i1 === 0" :rowspan="g1.span" style="text-align:right;">{{ g1.totalQty }}</td>
                                                         <td style="color: var(--primary); font-weight:700;">{{ r1['Lot No.'] || r1['할당 Lot'] }}</td>
-                                                        <td style="text-align:right; font-weight:800; color: var(--primary);">{{ r1['제조량'] || r1['할당수량'] }}</td>
+                                                        <td style="text-align:right; font-weight:800; color: var(--primary);">{{ r1['포장시 요구량'] || r1['할당수량'] || r1['제조량'] }}</td>
                                                     </tr>
                                                     
                                                     <!-- Level 2 Nested -->
