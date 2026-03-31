@@ -37,9 +37,24 @@ def get_bom_all():
         tables = ['level0', 'level1', 'level2', 'level3', 'instruction_summary']
         result = {}
         for table in tables:
-            cursor.execute(f"SELECT * FROM {table}")
-            rows = cursor.fetchall()
-            result[table] = [dict(row) for row in rows]
+            if table in ['level1', 'level2', 'level3']:
+                name_col = '구성품 명칭' if table == 'level1' else '원재료명'
+                cursor.execute(f'''
+                    SELECT l.*, i.description as _master_name 
+                    FROM {table} l 
+                    LEFT JOIN item_master i ON l."코드번호" = i.code_no
+                ''')
+                rows = []
+                for r in cursor.fetchall():
+                    d = dict(r)
+                    if d.get('_master_name'):
+                        d[name_col] = d['_master_name']
+                    rows.append(d)
+                result[table] = rows
+            else:
+                cursor.execute(f"SELECT * FROM {table}")
+                rows = cursor.fetchall()
+                result[table] = [dict(row) for row in rows]
         conn.close()
         return jsonify(result)
     except Exception as e:
@@ -71,8 +86,155 @@ def get_doc_master(code_no):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# --- BOM 제조지시 실행 데이터 저장/조회 ---
+@app.route('/api/save_instruction', methods=['POST'])
+def save_instruction():
+    data = request.json
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. level0 저장 (스키마에 맞춰 필드명 매핑)
+        l0 = data.get('level0', {})
+        cursor.execute("""
+            INSERT INTO level0 ("Level", "제품코드", "제품명", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적")
+            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (l0['productCode'], l0['productName'], l0['lotNo'], l0['targetQty'], l0['version'], l0['mfgDate'], l0['requestTeam'], l0['purpose']))
+        
+        # 2. level1, 2, 3 저장
+        for lvl in [1, 2, 3]:
+            rows = data.get(f'level{lvl}', [])
+            table_name = f'level{lvl}'
+            for r in rows:
+                # DB 필드명 추출 (JSON 키와 다를 수 있으므로 정규화)
+                # r.keys()가 ['Level', '상위 Lot', 'Code No.', '명칭 / 구성품', '필요 수량', '단위', '할당 Lot', '유효기간', '할당수량'] 형태임
+                
+                if lvl == 1:
+                    cursor.execute(f"""
+                        INSERT INTO level1 ("Level", "상위Lot", "코드번호", "구성품 명칭", "Lot No.", "제조일자", "유효기간", "포장시 요구량", "단위")
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (lvl, r.get('상위 Lot'), r.get('Code No.'), r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
+                else:
+                    cursor.execute(f"""
+                        INSERT INTO level{lvl} ("Level", "상위Lot", "코드번호", "원재료명", "Lot No.", "제조일자", "유효기간", "제조량", "단위")
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (lvl, r.get('상위 Lot'), r.get('Code No.'), r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
+        
+        # 3. instruction_summary 저장
+        semi_lots = data.get('instruction_summary', [])
+        for s in semi_lots:
+            cursor.execute("""
+                INSERT INTO instruction_summary ("상위Lot", "약어", "제조지침서 No.", "Lot. No.", "생산량", "제조일자")
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (l0['lotNo'], s.get('division'), s.get('latest_doc_no'), s.get('calcLot'), l0['targetQty'], s.get('mfgDate')))
+            
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        # 에러 발생 시 JSON으로 반환하도록 보장
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/instruction_lots')
+def get_instruction_lots():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # 필드명을 "LOT NO.", "제품명", "제조일자"로 변경
+        cursor.execute('SELECT DISTINCT "LOT NO.", "제품명", "제조일자" FROM level0 ORDER BY "제조일자" DESC')
+        rows = cursor.fetchall()
+        conn.close()
+        # 클라이언트(app.js)에서 기대하는 키값(lot_no, product_name, mfg_date)으로 변환하여 반환
+        result = []
+        for r in rows:
+            result.append({
+                "lot_no": r["LOT NO."],
+                "product_name": r["제품명"],
+                "mfg_date": r["제조일자"]
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/instruction_detail/<lot_no>')
+def get_instruction_detail(lot_no):
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # 1. Level 0
+        cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
+        l0_row = cursor.fetchone()
+        if not l0_row:
+            conn.close()
+            return jsonify({"error": "Lot not found"}), 404
+        l0 = dict(l0_row)
+        
+        # 2. Level 1 (상위Lot이 Level 0의 LOT NO.인 항목)
+        cursor.execute('''
+            SELECT l.*, i.description as _master_name 
+            FROM level1 l 
+            LEFT JOIN item_master i ON l."코드번호" = i.code_no 
+            WHERE l."상위Lot" = ?
+        ''', (lot_no,))
+        l1_rows = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            if d.get('_master_name'): d['구성품 명칭'] = d['_master_name']
+            l1_rows.append(d)
+        l1_lots = [r["Lot No."] for r in l1_rows if r["Lot No."]]
+        
+        # 3. Level 2 (상위Lot이 Level 1의 Lot No.들 중 하나인 항목)
+        l2_rows = []
+        if l1_lots:
+            placeholders = ",".join(["?" for _ in l1_lots])
+            cursor.execute(f'''
+                SELECT l.*, i.description as _master_name 
+                FROM level2 l 
+                LEFT JOIN item_master i ON l."코드번호" = i.code_no 
+                WHERE l."상위Lot" IN ({placeholders})
+            ''', l1_lots)
+            for r in cursor.fetchall():
+                d = dict(r)
+                if d.get('_master_name'): d['원재료명'] = d['_master_name']
+                l2_rows.append(d)
+        
+        l2_lots = [r["Lot No."] for r in l2_rows if r["Lot No."]]
+        
+        # 4. Level 3 (상위Lot이 Level 2의 Lot No.들 중 하나인 항목)
+        l3_rows = []
+        if l2_lots:
+            placeholders = ",".join(["?" for _ in l2_lots])
+            cursor.execute(f'''
+                SELECT l.*, i.description as _master_name 
+                FROM level3 l 
+                LEFT JOIN item_master i ON l."코드번호" = i.code_no 
+                WHERE l."상위Lot" IN ({placeholders})
+            ''', l2_lots)
+            for r in cursor.fetchall():
+                d = dict(r)
+                if d.get('_master_name'): d['원재료명'] = d['_master_name']
+                l3_rows.append(d)
+            
+        # 5. instruction_summary
+        cursor.execute('SELECT * FROM instruction_summary WHERE "상위Lot" = ?', (lot_no,))
+        summary = [dict(r) for r in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify({
+            "level0": l0,
+            "level1": l1_rows,
+            "level2": l2_rows,
+            "level3": l3_rows,
+            "instruction_summary": summary
+        })
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     print("--- Unified BOM System Server Starting ---")
     print("Accessible at: http://localhost:9000")
-    app.run(host='0.0.0.0', port=9000, debug=False)
+    app.run(host='0.0.0.0', port=9000, debug=True)

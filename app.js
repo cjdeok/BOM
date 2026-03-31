@@ -11,8 +11,24 @@ createApp({
         const isViewLoading = ref(true);
         const selectedViewLot = ref(null);
         const openViewItems = ref(new Set());
+        const viewDepth = ref(1); // 기본값: Level 1만 보기
         const showSemiModal = ref(false);
         const showRawModal = ref(false);
+
+        const setViewDepth = (depth) => {
+            viewDepth.value = depth;
+            const newOpenItems = new Set();
+            
+            if (depth > 1) {
+                // Level 2 이상일 경우, 하위 항목이 있는 Level 1 아코디언을 모두 엽니다.
+                filteredL1.value.forEach(l1 => {
+                    if (hasChildren(l1['Lot No.'])) {
+                        newOpenItems.add(l1.ID);
+                    }
+                });
+            }
+            openViewItems.value = newOpenItems;
+        };
 
         // =============================================
         // CSV Upload State
@@ -32,11 +48,197 @@ createApp({
             purpose: ''
         });
 
+        // =============================================
+        // Instruction Doc Master (완제품 패널용)
+        // =============================================
+        const docMasterList = ref([]);
+        const piList = computed(() => {
+            return docMasterList.value
+                .filter(doc => doc.division && doc.division.toUpperCase().includes('PI'))
+                .map(doc => {
+                    return {
+                        id: doc.id,
+                        label: 'PI',
+                        fullName: doc.division,
+                        codeNo: doc.code_no,
+                        latestDocNo: doc.latest_doc_no || '문서번호 없음'
+                    };
+                });
+        });
+
+        // 제품 코드 변경 시 문서 마스터 정보 조회
+        const fetchDocMaster = async (codeNo) => {
+            if (!codeNo) {
+                docMasterList.value = [];
+                return;
+            }
+            try {
+                const res = await fetch(`/api/doc_master/${codeNo}`);
+                const data = await res.json();
+                docMasterList.value = data;
+            } catch (err) {
+                console.error('Error fetching doc master:', err);
+                docMasterList.value = [];
+            }
+        };
+
+        // v-model 감시 (Vue 3 setup 내에서 watch 대신 반응형 변수 변경 시 호출 방식 사용)
+        const onProductCodeChange = () => {
+            fetchDocMaster(csvLevel0.productCode);
+        };
+
         const isCsvLevel0Valid = computed(() => {
             return csvLevel0.productName && csvLevel0.productCode && csvLevel0.lotNo &&
                    csvLevel0.targetQty && csvLevel0.version && csvLevel0.mfgDate &&
                    csvLevel0.requestTeam && csvLevel0.purpose;
         });
+
+        // =============================================
+        // 제조지시 기록 (History) State
+        // =============================================
+        const historyLots = ref([]);
+        const selectedHistoryLot = ref('');
+        const historyDetail = ref(null);
+        const historyDepth = ref(3); // 기본값: Level 3까지 모두 보기
+
+        const setHistoryDepth = (depth) => {
+            historyDepth.value = depth;
+        };
+
+        const loadHistoryLots = async () => {
+            try {
+                const res = await fetch('/api/instruction_lots');
+                historyLots.value = await res.json();
+            } catch (e) { console.error(e); }
+        };
+
+        const loadHistoryDetail = async () => {
+            if (!selectedHistoryLot.value) return;
+            try {
+                const res = await fetch(`/api/instruction_detail/${selectedHistoryLot.value}`);
+                historyDetail.value = await res.json();
+            } catch (e) { alert('로드 실패: ' + e); }
+        };
+
+        const loadHistoryLotsRefresh = async () => {
+            await loadHistoryLots();
+        };
+
+        // 데이터베이스에 저장
+        const saveToDatabase = async () => {
+            if (!confirm('현재 제조실시 내역을 데이터베이스에 저장하시겠습니까?')) return;
+            
+            // PI 항목을 instruction_summary 형식으로 변환하여 함께 저장
+            const piSummaryItems = piList.value.map(pi => ({
+                division: pi.fullName || 'PI',
+                latest_doc_no: pi.latestDocNo,
+                mfgDate: csvLevel0.mfgDate,
+                calcLot: '', 
+                expiryDate: ''
+            }));
+
+            const payload = {
+                level0: csvLevel0,
+                level1: csvRows.value.filter(r => parseInt(r['Level'] || r['level']) === 1),
+                level2: csvRows.value.filter(r => parseInt(r['Level'] || r['level']) === 2),
+                level3: csvRows.value.filter(r => parseInt(r['Level'] || r['level']) === 3),
+                instruction_summary: [...piSummaryItems, ...semiLotList.value]
+            };
+
+            try {
+                const res = await fetch('/api/save_instruction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (result.status === 'success') {
+                    alert('성공적으로 저장되었습니다.');
+                    loadHistoryLots(); 
+                } else {
+                    alert('저장 실패: ' + result.error);
+                }
+            } catch (err) {
+                alert('서버 오류: ' + err);
+            }
+        };
+
+        // 헬퍼: 행 그룹화 (기록 조회용)
+        function groupRowsByLotAndCode(rows) {
+            if (!rows || !rows.length) return [];
+            const res = [];
+            // DB 필드명 "상위Lot" 또는 "상위 Lot" 사용
+            const lots = [...new Set(rows.map(r => r['상위Lot'] || r['상위 Lot']))];
+            lots.forEach(lot => {
+                const lotRows = rows.filter(r => (r['상위Lot'] || r['상위 Lot']) === lot);
+                // DB 필드명 "코드번호" 사용
+                const codes = [...new Set(lotRows.map(r => r['코드번호'] || r['Code No.']))];
+                codes.forEach((code, cIdx) => {
+                    const groupRows = lotRows.filter(r => (r['코드번호'] || r['Code No.']) === code);
+                    
+                    const totalQty = groupRows.reduce((sum, r) => {
+                        const q = parseFloat(String(r['제조량'] || r['포장시 요구량'] || r['할당수량'] || r['필요 수량'] || '0').replace(/,/g, ''));
+                        return sum + (isNaN(q) ? 0 : q);
+                    }, 0);
+                    const displayTotalQty = Math.round(totalQty * 1000) / 1000;
+
+                    res.push({
+                        isFirstInLot: cIdx === 0,
+                        lotSpan: lotRows.length,
+                        span: groupRows.length,
+                        totalQty: displayTotalQty,
+                        rows: groupRows
+                    });
+                });
+            });
+            return res;
+        }
+
+        const historyByLevelGrouped = computed(() => {
+            if (!historyDetail.value) return {};
+            const grouped = {};
+            [1, 2, 3].forEach(lvl => {
+                const rows = historyDetail.value[`level${lvl}`] || [];
+                grouped[lvl] = groupRowsByLotAndCode(rows);
+            });
+            return grouped;
+        });
+
+        const historyPiList = computed(() => {
+            if (!historyDetail.value) return [];
+            const sum = historyDetail.value.instruction_summary || [];
+            // DB 필드명 "약어", "제조지침서 No." 사용
+            return sum.filter(s => (s['약어'] || s['division'] || '').toUpperCase().includes('PI'))
+                      .map(s => ({ label: 'PI', latestDocNo: s['제조지침서 No.'] || s['latest_doc_no'] }));
+        });
+
+        const historySemiLotList = computed(() => {
+            if (!historyDetail.value) return [];
+            const sum = historyDetail.value.instruction_summary || [];
+            return sum.filter(s => {
+                const div = (s['약어'] || s['division'] || '').toUpperCase();
+                return div && !div.includes('PI');
+            }).map(s => ({
+                division: s['약어'] || s['division'],
+                calcLot: s['Lot. No.'] || s['calcLot'] || s['calc_lot']
+            }));
+        });
+
+        // 기록 조회용 하위 항목 필터링 (Level 2)
+        const getHistoryL2 = (l1Lot) => {
+            if (!historyDetail.value) return [];
+            const lots = splitLines(l1Lot);
+            const l2 = (historyDetail.value.level2 || []).filter(i => lots.includes(i['상위Lot'] || i['상위 Lot']));
+            return groupRowsByLotAndCode(l2);
+        };
+
+        // 기록 조회용 하위 항목 필터링 (Level 3)
+        const getHistoryL3 = (l2Lot) => {
+            if (!historyDetail.value) return [];
+            const lots = splitLines(l2Lot);
+            const l3 = (historyDetail.value.level3 || []).filter(i => lots.includes(i['상위Lot'] || i['상위 Lot']));
+            return groupRowsByLotAndCode(l3);
+        };
 
         // =============================================
         // Lot 계층 구조 적용 로직
@@ -124,6 +326,10 @@ createApp({
             });
             
             csvRows.value = JSON.parse(JSON.stringify(rows));
+            
+            // 완제품 패널(PI 항목) 업데이트
+            fetchDocMaster(csvLevel0.productCode);
+            
             alert('상위 Lot 계층 구조 및 NC 특수 로직(BCM005)이 적용되었습니다.');
         };
 
@@ -277,7 +483,22 @@ createApp({
         const triggerCsvInput = () => { if (csvInput.value) csvInput.value.click(); };
         const handleCsvDrop = (e) => { isDragOver.value = false; const f = e.dataTransfer.files[0]; if (f) loadCsvFile(f); };
         const handleCsvFile = (e) => { const f = e.target.files[0]; if (f) loadCsvFile(f); };
-        const resetCsv = () => { csvRows.value = []; csvFileName.value = ''; };
+        const resetCsv = () => { 
+            csvRows.value = []; 
+            csvFileName.value = ''; 
+            // Level 0 입력값 초기화
+            csvLevel0.productName = '';
+            csvLevel0.productCode = '';
+            csvLevel0.lotNo = '';
+            csvLevel0.targetQty = '';
+            csvLevel0.version = '';
+            csvLevel0.mfgDate = new Date().toISOString().slice(0, 10);
+            csvLevel0.requestTeam = '';
+            csvLevel0.purpose = '';
+            // 우측 패널 데이터 초기화
+            docMasterList.value = [];
+            semiLotList.value = [];
+        };
 
         const downloadCsvResult = () => {
             if (!csvFiltered.value.length || typeof XLSX === 'undefined') return;
@@ -349,19 +570,28 @@ createApp({
             openViewItems.value = s;
         };
         const isOpen = (id) => openViewItems.value.has(id);
-        const splitLines = (str) => String(str || '').split('\n').filter(Boolean);
+        const splitLines = (str) => {
+            if (!str) return [];
+            return String(str).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+        };
 
         const groupItems = (items, keyCols, valCols) => {
+            if (!items || !items.length) return [];
             const groups = new Map();
             items.forEach(item => {
-                const key = keyCols.map(c => item[c]).join('||');
+                const key = keyCols.map(c => String(item[c] || '').trim()).join('||');
                 if (!groups.has(key)) {
                     const g = { ...item };
-                    valCols.forEach(c => { g[c] = String(item[c] || ''); });
+                    valCols.forEach(c => { g[c] = String(item[c] || '').trim(); });
                     groups.set(key, g);
                 } else {
                     const g = groups.get(key);
-                    valCols.forEach(c => { g[c] += '\n' + String(item[c] || ''); });
+                    valCols.forEach(c => { 
+                        const v = String(item[c] || '').trim();
+                        if (v && !String(g[c]).includes(v)) {
+                            g[c] += '\n' + v; 
+                        }
+                    });
                 }
             });
             return Array.from(groups.values());
@@ -520,6 +750,7 @@ createApp({
         // =============================================
         onMounted(() => {
             loadViewerData();
+            loadHistoryLots();
         });
 
         return {
@@ -527,11 +758,17 @@ createApp({
             viewData, isViewLoading, selectedViewLot, currentL0, displayL0Info, selectViewLot,
             filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
             showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
+            viewDepth, setViewDepth,
             // CSV Upload Tab
             csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
             triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
             showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,
-            isCsvLevel0Valid, applyLotHierarchy
+            isCsvLevel0Valid, applyLotHierarchy,
+            onProductCodeChange, piList,
+            saveToDatabase,
+            // History Tab
+            historyLots, selectedHistoryLot, historyDetail, loadHistoryLots, loadHistoryDetail, historyByLevelGrouped, historyPiList, historySemiLotList,
+            getHistoryL2, getHistoryL3, historyDepth, setHistoryDepth
         };
     }
 }).mount('#app');
