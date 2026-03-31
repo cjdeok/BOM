@@ -3,6 +3,9 @@ import pandas as pd
 from flask import Flask, jsonify, send_from_directory, request, send_file
 import os
 import io
+import openpyxl
+import tempfile
+import urllib.parse
 
 app = Flask(__name__, static_folder='.')
 
@@ -60,108 +63,15 @@ def get_bom_all():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/item_master/<code_no>')
-def get_item_master(code_no):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM item_master WHERE code_no = ?", (code_no,))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return jsonify(dict(row))
-        return jsonify({"error": "Not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/doc_master/<code_no>')
-def get_doc_master(code_no):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM instruction_doc_master WHERE code_no = ?", (code_no,))
-        rows = cursor.fetchall()
-        conn.close()
-        return jsonify([dict(row) for row in rows])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# --- BOM 제조지시 실행 데이터 저장/조회 ---
-@app.route('/api/save_instruction', methods=['POST'])
-def save_instruction():
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. level0 저장 (스키마에 맞춰 필드명 매핑)
-        l0 = data.get('level0', {})
-        
-        # item_master에서 category 조회
-        cursor.execute('SELECT category FROM item_master WHERE code_no = ?', (l0.get('modelName'),))
-        row = cursor.fetchone()
-        l0_category = row['category'] if row else None
-
-        cursor.execute("""
-            INSERT INTO level0 ("Level", "제품코드", "구분", "제품명", "제품정보", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적", "유효기간")
-            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (l0.get('modelName'), l0_category, l0.get('productName'), l0.get('productInfo'), l0.get('lotNo'), l0.get('targetQty'), l0.get('version'), l0.get('mfgDate'), l0.get('requestTeam'), l0.get('purpose'), l0.get('expiryDate')))
-        
-        # 2. level1, 2, 3 저장
-        for lvl in [1, 2, 3]:
-            rows = data.get(f'level{lvl}', [])
-            for r in rows:
-                code_no = r.get('Code No.')
-                # item_master에서 category 및 manufacturer 조회
-                cursor.execute('SELECT category, manufacturer FROM item_master WHERE code_no = ?', (code_no,))
-                m_row = cursor.fetchone()
-                category = m_row['category'] if m_row else None
-                mfr = m_row['manufacturer'] if m_row else None
-
-                if lvl == 1:
-                    cursor.execute(f"""
-                        INSERT INTO level1 ("Level", "상위Lot", "코드번호", "구분", "구성품 명칭", "Lot No.", "제조일자", "유효기간", "포장시 요구량", "단위")
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (lvl, r.get('상위 Lot'), code_no, category, r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
-                else:
-                    cursor.execute(f"""
-                        INSERT INTO level{lvl} ("Level", "상위Lot", "코드번호", "구분", "원재료명", "제조사", "Lot No.", "제조일자", "유효기간", "제조량", "단위")
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (lvl, r.get('상위 Lot'), code_no, category, r.get('명칭 / 구성품'), mfr, r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
-        
-        # 3. instruction_summary 저장
-        semi_lots = data.get('instruction_summary', [])
-        for s in semi_lots:
-            cursor.execute("""
-                INSERT INTO instruction_summary ("상위Lot", "약어", "제조지침서 No.", "Lot. No.", "생산량", "제조일자")
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (l0['lotNo'], s.get('division'), s.get('latest_doc_no'), s.get('calcLot'), l0['targetQty'], s.get('mfgDate')))
-            
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "success"})
-    except Exception as e:
-        if 'conn' in locals(): conn.close()
-        # 에러 발생 시 JSON으로 반환하도록 보장
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/api/instruction_lots')
 def get_instruction_lots():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # 필드명을 "LOT NO.", "제품명", "제조일자"로 변경
         cursor.execute('SELECT DISTINCT "LOT NO.", "제품명", "제조일자" FROM level0 ORDER BY "제조일자" DESC')
         rows = cursor.fetchall()
         conn.close()
-        # 클라이언트(app.js)에서 기대하는 키값(lot_no, product_name, mfg_date)으로 변환하여 반환
-        result = []
-        for r in rows:
-            result.append({
-                "lot_no": r["LOT NO."],
-                "product_name": r["제품명"],
-                "mfg_date": r["제조일자"]
-            })
+        result = [{"lot_no": r["LOT NO."], "product_name": r["제품명"], "mfg_date": r["제조일자"]} for r in rows]
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -170,80 +80,166 @@ def get_instruction_lots():
 def get_instruction_detail(lot_no):
     try:
         conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        # 1. Level 0
         cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
-        l0_row = cursor.fetchone()
-        if not l0_row:
+        l0 = cursor.fetchone()
+        if not l0:
             conn.close()
             return jsonify({"error": "Lot not found"}), 404
-        l0 = dict(l0_row)
+        l0_dict = dict(l0)
         
-        # 2. Level 1 (상위Lot이 Level 0의 LOT NO.인 항목)
-        cursor.execute('''
-            SELECT l.*, i.description as _master_name 
-            FROM level1 l 
-            LEFT JOIN item_master i ON l."코드번호" = i.code_no 
-            WHERE l."상위Lot" = ?
-        ''', (lot_no,))
-        l1_rows = []
-        for r in cursor.fetchall():
-            d = dict(r)
-            if d.get('_master_name'): d['구성품 명칭'] = d['_master_name']
-            l1_rows.append(d)
-        l1_lots = [r["Lot No."] for r in l1_rows if r["Lot No."]]
+        cursor.execute('SELECT * FROM level1 WHERE "상위Lot" = ?', (lot_no,))
+        l1 = [dict(r) for r in cursor.fetchall()]
+        l1_lots = [r["Lot No."] for r in l1 if r["Lot No."]]
         
-        # 3. Level 2 (상위Lot이 Level 1의 Lot No.들 중 하나인 항목)
-        l2_rows = []
+        l2 = []
         if l1_lots:
-            placeholders = ",".join(["?" for _ in l1_lots])
-            cursor.execute(f'''
-                SELECT l.*, i.description as _master_name 
-                FROM level2 l 
-                LEFT JOIN item_master i ON l."코드번호" = i.code_no 
-                WHERE l."상위Lot" IN ({placeholders})
-            ''', l1_lots)
-            for r in cursor.fetchall():
-                d = dict(r)
-                if d.get('_master_name'): d['원재료명'] = d['_master_name']
-                l2_rows.append(d)
+            p = ",".join(["?" for _ in l1_lots])
+            cursor.execute(f'SELECT * FROM level2 WHERE "상위Lot" IN ({p})', l1_lots)
+            l2 = [dict(r) for r in cursor.fetchall()]
         
-        l2_lots = [r["Lot No."] for r in l2_rows if r["Lot No."]]
-        
-        # 4. Level 3 (상위Lot이 Level 2의 Lot No.들 중 하나인 항목)
-        l3_rows = []
+        l2_lots = [r["Lot No."] for r in l2 if r["Lot No."]]
+        l3 = []
         if l2_lots:
-            placeholders = ",".join(["?" for _ in l2_lots])
-            cursor.execute(f'''
-                SELECT l.*, i.description as _master_name 
-                FROM level3 l 
-                LEFT JOIN item_master i ON l."코드번호" = i.code_no 
-                WHERE l."상위Lot" IN ({placeholders})
-            ''', l2_lots)
-            for r in cursor.fetchall():
-                d = dict(r)
-                if d.get('_master_name'): d['원재료명'] = d['_master_name']
-                l3_rows.append(d)
-            
-        # 5. instruction_summary
+            p = ",".join(["?" for _ in l2_lots])
+            cursor.execute(f'SELECT * FROM level3 WHERE "상위Lot" IN ({p})', l2_lots)
+            l3 = [dict(r) for r in cursor.fetchall()]
+
         cursor.execute('SELECT * FROM instruction_summary WHERE "상위Lot" = ?', (lot_no,))
         summary = [dict(r) for r in cursor.fetchall()]
-        
         conn.close()
+        return jsonify({"level0": l0_dict, "level1": l1, "level2": l2, "level3": l3, "instruction_summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- 포장지시서 API ---
+@app.route('/api/packaging_preview/<lot_no>')
+def get_packaging_preview(lot_no):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
+        l0 = cursor.fetchone()
+        if not l0:
+            conn.close()
+            return jsonify({"error": "Lot not found"}), 404
+        l0 = dict(l0)
+        cursor.execute('SELECT * FROM level1 WHERE "상위Lot" = ?', (lot_no,))
+        l1_items = [dict(r) for r in cursor.fetchall()]
+        cursor.execute('SELECT doc_name FROM instruction_doc_master WHERE code_no = ? AND division LIKE "%PI%"', (l0['제품코드'],))
+        doc = cursor.fetchone()
+        doc_name = doc['doc_name'] if doc else ""
+        conn.close()
+        
+        total_qty = l0.get('생산 수량(kit)') or 0
         return jsonify({
-            "level0": l0,
-            "level1": l1_rows,
-            "level2": l2_rows,
-            "level3": l3_rows,
-            "instruction_summary": summary
+            "E4": doc_name, "A7": l0['제품명'], "J7": l0['제품버전'], "N7": total_qty,
+            "S7": l0['제조일자'], "Z7": l0['유효기간'], "AE7": l0['LOT NO.'], "EMA015_items": l1_items
         })
     except Exception as e:
-        if 'conn' in locals(): conn.close()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/packaging_download/<lot_no>')
+def download_packaging(lot_no):
+    template_path = os.path.join(ROOT_DIR, '25BCE01-포장지시서.xlsx')
+    if not os.path.exists(template_path):
+        return jsonify({"error": "Template file not found"}), 404
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
+        l0 = cursor.fetchone()
+        if not l0:
+            conn.close()
+            return jsonify({"error": "Lot not found"}), 404
+        l0 = dict(l0)
+        cursor.execute('SELECT * FROM level1 WHERE "상위Lot" = ?', (lot_no,))
+        l1_items = [dict(r) for r in cursor.fetchall()]
+        cursor.execute('SELECT doc_name FROM instruction_doc_master WHERE code_no = ? AND division LIKE "%PI%"', (l0['제품코드'],))
+        doc = cursor.fetchone()
+        doc_name = doc['doc_name'] if doc else ""
+        conn.close()
+
+        wb = openpyxl.load_workbook(template_path)
+        ws = wb.active
+        ws['E4']=doc_name; ws['A7']=l0['제품명']; ws['J7']=l0['제품버전']
+        ws['S7']=l0['제조일자']; ws['Z7']=l0['유효기간']; ws['AE7']=l0['LOT NO.']
+        
+        mapping = {'EMA015':21,'EMA014':22,'CR(01)':23,'PC(01)':24,'NC(01)':25,'DA(01)':26,'RD(01)':27,'WS(01)':28,'TM(01)':29,'SS(01)':30,'EMA013':31,'PL(01)':32,'IFU':33}
+        total_qty = l0.get('생산 수량(kit)') or 0
+
+        for item in l1_items:
+            code = str(item.get('코드번호') or '').strip()
+            row_idx = next((row for key, row in mapping.items() if key in code), None)
+            try:
+                if row_idx and row_idx != 33:
+                    ws[f'L{row_idx}'] = item.get('Lot No.')
+                    ws[f'S{row_idx}'] = l0['제조일자']
+                    ws[f'X{row_idx}'] = item.get('유효기간')
+                    ws[f'AI{row_idx}'] = float(str(item.get('포장시 요구량') or 0).replace(',', ''))
+            except: pass
+            
+        ws['L33']=""; ws['S33']=l0['제조일자']; ws['X33']=""; ws['AI33']=total_qty; ws['N7']=total_qty
+
+        tmp_fd, tmp_name = tempfile.mkstemp(suffix='.xlsx')
+        os.close(tmp_fd)
+        wb.save(tmp_name); wb.close()
+        return send_file(tmp_name, as_attachment=True, download_name=f'Packaging_Instruction_{lot_no}.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- 완제품 관리 API ---
+@app.route('/api/product_management_preview/<lot_no>')
+def get_product_management_preview(lot_no):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
+        l0 = cursor.fetchone()
+        if not l0:
+            conn.close()
+            return jsonify({"error": "Lot not found"}), 404
+        l0 = dict(l0)
+        cursor.execute('SELECT "포장시 요구량" FROM level1 WHERE "상위Lot" = ? AND "코드번호" LIKE "EMA015%"', (lot_no,))
+        item = cursor.fetchone()
+        ema015_qty = item[0] if item else 0
+        conn.close()
+        return jsonify({
+            "A7": l0.get('제품명', ''), "I7": l0.get('제품코드', ''), "N7": l0.get('LOT NO.', ''),
+            "T7": l0.get('제조일자', ''), "A9": l0.get('유효기간', ''), "I9": ema015_qty
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/product_management_download/<lot_no>')
+def download_product_management(lot_no):
+    template_path = os.path.join(ROOT_DIR, '25BCE01-완제품 관리.xlsx')
+    if not os.path.exists(template_path):
+        return jsonify({"error": "Template file not found"}), 404
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM level0 WHERE "LOT NO." = ?', (lot_no,))
+        l0 = cursor.fetchone()
+        if not l0:
+            conn.close()
+            return jsonify({"error": "Lot not found"}), 404
+        l0 = dict(l0)
+        cursor.execute('SELECT "포장시 요구량" FROM level1 WHERE "상위Lot" = ? AND "코드번호" LIKE "EMA015%"', (lot_no,))
+        item = cursor.fetchone()
+        ema015_qty = item[0] if item else 0
+        conn.close()
+        
+        wb = openpyxl.load_workbook(template_path)
+        ws = wb.active
+        ws['A7']=l0.get('제품명',''); ws['I7']=l0.get('제품코드',''); ws['N7']=l0.get('LOT NO.','')
+        ws['T7']=l0.get('제조일자',''); ws['A9']=l0.get('유효기간',''); ws['I9']=ema015_qty
+        tmp_fd, tmp_name = tempfile.mkstemp(suffix='.xlsx'); os.close(tmp_fd)
+        wb.save(tmp_name); wb.close()
+        return send_file(tmp_name, as_attachment=True, download_name=f'Product_Management_{lot_no}.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     print("--- Unified BOM System Server Starting ---")
-    print("Accessible at: http://localhost:9000")
     app.run(host='0.0.0.0', port=9000, debug=True)

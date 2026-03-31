@@ -251,13 +251,138 @@ createApp({
             }));
         });
 
-        // 새 버튼 기능 (스텁)
-        const openPackagingInstruction = (pi) => {
-            alert(`[포장지시서] ${pi.latestDocNo || '문서'} 정보로 이동합니다.`);
+        // =============================================
+        // Packaging Instruction Modal State
+        // =============================================
+        const showPackagingModal = ref(false);
+        const showProductManagementModal = ref(false); // 추가
+        const productManagementPreview = ref({
+            A7: '', I7: '', N7: '', T7: '', A9: '', I9: 0
+        }); // 추가
+        const packagingPreview = ref({
+            E4: '', A7: '', J7: '', N7: 0, S7: '', Z7: '', AE7: '',
+            items_mapped: []
+        });
+
+        const openPackagingInstruction = async (pi) => {
+            let lotNo = '';
+            if (currentTab.value === 'viewer') lotNo = selectedViewLot.value;
+            else if (currentTab.value === 'upload-bom') lotNo = csvLevel0.lotNo;
+            else if (currentTab.value === 'history') lotNo = selectedHistoryLot.value;
+
+            if (!lotNo) {
+                alert('대상 Lot No.를 먼저 선택하거나 생성해주세요.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/packaging_preview/${lotNo}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert('미리보기 데이터를 가져오는데 실패했습니다: ' + data.error);
+                } else {
+                    // 서버에서 받은 l1_items 데이터를 21-33 매핑 룰에 따라 가공
+                    const mapping = {
+                        'EMA015': { label: 'EMA015', row: 21 },
+                        'EMA014': { label: 'EMA014', row: 22 },
+                        'CR(01)': { label: 'CR(01)', row: 23 },
+                        'PC(01)': { label: 'PC(01)', row: 24 },
+                        'NC(01)': { label: 'NC(01)', row: 25 },
+                        'DA(01)': { label: 'DA(01)', row: 26 },
+                        'RD(01)': { label: 'RD(01)', row: 27 },
+                        'WS(01)': { label: 'WS(01)', row: 28 },
+                        'TM(01)': { label: 'TM(01)', row: 29 },
+                        'SS(01)': { label: 'SS(01)', row: 30 },
+                        'EMA013': { label: 'EMA013', row: 31 },
+                        'PL(01)': { label: 'PL(01)', row: 32 },
+                        'IFU': { label: 'IFU', row: 33 }
+                    };
+
+                    const l1_raw = data.EMA015_items || [];
+                    const mapped = [];
+                    const totalQty = data.N7 || 0;
+
+                    l1_raw.forEach(item => {
+                        const code = String(item['코드번호'] || '').toUpperCase();
+                        for (const [key, val] of Object.entries(mapping)) {
+                            if (code.includes(key)) {
+                                if (val.row === 33) return; // 33행은 아래에서 별도 추가
+                                mapped.push({
+                                    ...val,
+                                    lotNo: item['Lot No.'] || item['할당 Lot'],
+                                    expiryDate: item['유효기간'],
+                                    qty: item['포장시 요구량'] || item['할당수량'] || item['제조량']
+                                });
+                                break;
+                            }
+                        }
+                    });
+
+                    // 33행 명시적 추가 (L: 빈칸, S: 제조일자, X: 빈칸, AI: 총수량)
+                    mapped.push({
+                        label: 'IFU 등 기재',
+                        row: 33,
+                        lotNo: '-',
+                        expiryDate: '-',
+                        qty: totalQty
+                    });
+
+                    packagingPreview.value = { 
+                        ...data,
+                        items_mapped: mapped.sort((a, b) => a.row - b.row)
+                    };
+                    showPackagingModal.value = true;
+                }
+            } catch (err) {
+                alert('서버 통신 오류: ' + err);
+            }
         };
 
-        const openProductManagement = (pi) => {
-            alert(`[완제품관리] ${pi.latestDocNo || '문서'} 관리 화면으로 이동합니다.`);
+        const downloadPackagingFile = () => {
+            const lotNo = packagingPreview.value.AE7;
+            if (!lotNo) return;
+            const link = document.createElement('a');
+            link.href = `/api/packaging_download/${lotNo}`;
+            link.setAttribute('download', ''); // 다운로드 강제
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        const openProductManagement = async (pi) => {
+            let lotNo = '';
+            if (currentTab.value === 'viewer') lotNo = selectedViewLot.value;
+            else if (currentTab.value === 'upload-bom') lotNo = csvLevel0.lotNo;
+            else if (currentTab.value === 'history') lotNo = selectedHistoryLot.value;
+
+            if (!lotNo) {
+                alert('대상 Lot No.를 먼저 선택하거나 생성해주세요.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/product_management_preview/${lotNo}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert('미리보기 데이터를 가져오는데 실패했습니다: ' + data.error);
+                } else {
+                    productManagementPreview.value = data;
+                    showProductManagementModal.value = true;
+                }
+            } catch (err) {
+                alert('서버 통신 오류: ' + err);
+            }
+        };
+
+        const downloadProductManagementFile = () => {
+            const lotNo = productManagementPreview.value.N7;
+            if (!lotNo) return;
+            const link = document.createElement('a');
+            link.href = `/api/product_management_download/${lotNo}`;
+            link.setAttribute('download', ''); // 다운로드 강제
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         };
 
         const historySemiLotList = computed(() => {
@@ -845,7 +970,10 @@ createApp({
             historyLots, selectedHistoryLot, historyDetail, loadHistoryLots, loadHistoryDetail, historyByLevelGrouped, historyPiList, historySemiLotList,
             getHistoryL2, getHistoryL3, historyDepth, setHistoryDepth,
             // New Buttons
-            openPackagingInstruction, openProductManagement
+            openPackagingInstruction, openProductManagement,
+            showPackagingModal, packagingPreview, downloadPackagingFile,
+            // 완제품 관리 관련
+            showProductManagementModal, productManagementPreview, downloadProductManagementFile
         };
     }
 }).mount('#app');
