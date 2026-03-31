@@ -97,9 +97,9 @@ def save_instruction():
         # 1. level0 저장 (스키마에 맞춰 필드명 매핑)
         l0 = data.get('level0', {})
         cursor.execute("""
-            INSERT INTO level0 ("Level", "제품코드", "제품명", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적")
-            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (l0['productCode'], l0['productName'], l0['lotNo'], l0['targetQty'], l0['version'], l0['mfgDate'], l0['requestTeam'], l0['purpose']))
+            INSERT INTO level0 ("Level", "제품코드", "제품명", "제품정보", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적", "유효기간")
+            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (l0.get('modelName'), l0.get('productName'), l0.get('productInfo'), l0.get('lotNo'), l0.get('targetQty'), l0.get('version'), l0.get('mfgDate'), l0.get('requestTeam'), l0.get('purpose'), l0.get('expiryDate')))
         
         # 2. level1, 2, 3 저장
         for lvl in [1, 2, 3]:

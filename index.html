@@ -243,15 +243,20 @@
                                     </button>
                                 </div>
                             </div>                            <div class="card-body">
-                                <div class="form-grid">
-                                    <div class="form-group"><label>제품명</label><input type="text" v-model="csvLevel0.productName"></div>
-                                    <div class="form-group"><label>제품 Code No.</label><input type="text" v-model="csvLevel0.productCode"></div>
-                                    <div class="form-group"><label>생산 Lot No.</label><input type="text" v-model="csvLevel0.lotNo"></div>
-                                    <div class="form-group"><label>목표 수량</label><input type="number" v-model="csvLevel0.targetQty"></div>
-                                    <div class="form-group"><label>제품버전</label><input type="text" v-model="csvLevel0.version"></div>
-                                    <div class="form-group"><label>제조일자</label><input type="text" v-model="csvLevel0.mfgDate"></div>
-                                    <div class="form-group"><label>의뢰팀</label><input type="text" v-model="csvLevel0.requestTeam"></div>
-                                    <div class="form-group"><label>생산목적</label><input type="text" v-model="csvLevel0.purpose"></div>
+                                <div class="form-grid" style="grid-template-columns: repeat(5, 1fr); gap: 12px;">
+                                    <!-- Row 1 -->
+                                    <div class="form-group"><label>제품명</label><input type="text" v-model="csvLevel0.productName" readonly style="background-color: #f8fafc;"></div>
+                                    <div class="form-group"><label>모델명</label><input type="text" v-model="csvLevel0.modelName" @input="onModelNameChange"></div>
+                                    <div class="form-group"><label>제품정보</label><input type="text" v-model="csvLevel0.productInfo" readonly style="background-color: #f8fafc;"></div>
+                                    <div class="form-group"><label>LOT No.</label><input type="text" v-model="csvLevel0.lotNo" placeholder="수기 작성"></div>
+                                    <div class="form-group"><label>Version</label><input type="text" v-model="csvLevel0.version" readonly style="background-color: #f8fafc;"></div>
+                                    
+                                    <!-- Row 2 -->
+                                    <div class="form-group"><label>제조수량</label><input type="text" v-model="csvLevel0.targetQty"></div>
+                                    <div class="form-group"><label>제조일자</label><input type="date" v-model="csvLevel0.mfgDate" @change="calculateExpiry"></div>
+                                    <div class="form-group"><label>유효기간</label><input type="date" v-model="csvLevel0.expiryDate" readonly style="background-color: #f8fafc; font-weight:700; color:var(--accent);"></div>
+                                    <div class="form-group"><label>의뢰팀</label><input type="text" v-model="csvLevel0.requestTeam" placeholder="수기 작성"></div>
+                                    <div class="form-group"><label>생산목적</label><input type="text" v-model="csvLevel0.purpose" placeholder="수기 작성"></div>
                                 </div>
                             </div>
                         </div>
@@ -394,13 +399,18 @@
                                 <!-- Level 0 요약 -->
                                 <div class="card level-card l0" style="border-left: 6px solid var(--primary);">
                                     <div class="card-body">
-                                        <div class="l0-info">
-                                            <div class="info-cell"><div class="lbl">제품명</div><div class="val">{{ historyDetail.level0['제품명'] || historyDetail.level0.product_name }}</div></div>
-                                            <div class="info-cell"><div class="lbl">제품코드</div><div class="val">{{ historyDetail.level0['제품코드'] || historyDetail.level0.product_code }}</div></div>
-                                            <div class="info-cell"><div class="lbl">생산 Lot No.</div><div class="val" style="color: var(--primary);">{{ historyDetail.level0['LOT NO.'] || historyDetail.level0.lot_no }}</div></div>
-                                            <div class="info-cell"><div class="lbl">목표수량</div><div class="val">{{ historyDetail.level0['생산 수량(kit)'] || historyDetail.level0.target_qty }}</div></div>
-                                            <div class="info-cell"><div class="lbl">버전</div><div class="val">{{ historyDetail.level0['제품버전'] || historyDetail.level0.version }}</div></div>
-                                            <div class="info-cell"><div class="lbl">제조일자</div><div class="val">{{ historyDetail.level0['제조일자'] || historyDetail.level0.mfg_date }}</div></div>
+                                        <div class="l0-info" style="grid-template-columns: repeat(5, 1fr);">
+                                            <div class="info-cell"><div class="lbl">제품명</div><div class="val">{{ historyDetail.level0['제품명'] || historyDetail.level0.productName }}</div></div>
+                                            <div class="info-cell"><div class="lbl">모델명</div><div class="val">{{ historyDetail.level0['제품코드'] || historyDetail.level0.modelName }}</div></div>
+                                            <div class="info-cell"><div class="lbl">제품정보</div><div class="val">{{ historyDetail.level0['제품정보'] || historyDetail.level0.productInfo }}</div></div>
+                                            <div class="info-cell"><div class="lbl">LOT No.</div><div class="val" style="color: var(--primary); font-weight:700;">{{ historyDetail.level0['LOT NO.'] || historyDetail.level0.lotNo }}</div></div>
+                                            <div class="info-cell"><div class="lbl">Version</div><div class="val">{{ historyDetail.level0['제품버전'] || historyDetail.level0.version }}</div></div>
+                                            
+                                            <div class="info-cell"><div class="lbl">제조수량</div><div class="val">{{ historyDetail.level0['생산 수량(kit)'] || historyDetail.level0.targetQty }}</div></div>
+                                            <div class="info-cell"><div class="lbl">제조일자</div><div class="val">{{ historyDetail.level0['제조일자'] || historyDetail.level0.mfgDate }}</div></div>
+                                            <div class="info-cell"><div class="lbl">유효기간</div><div class="val" style="font-weight:700; color:var(--accent);">{{ historyDetail.level0['유효기간'] || historyDetail.level0.expiryDate }}</div></div>
+                                            <div class="info-cell"><div class="lbl">의뢰팀</div><div class="val">{{ historyDetail.level0['의뢰팀'] || historyDetail.level0.requestTeam }}</div></div>
+                                            <div class="info-cell"><div class="lbl">생산목적</div><div class="val">{{ historyDetail.level0['생산목적'] || historyDetail.level0.purpose }}</div></div>
                                         </div>
                                     </div>
                                 </div>
@@ -422,7 +432,7 @@
                                             <thead>
                                                 <tr>
                                                     <th style="width: 50px; text-align:center;">LV</th>
-                                                    <th style="width: 150px;">상위 LOT</th>
+                                                    <th style="width: 200px;">상위 LOT</th>
                                                     <th style="width: 120px;">코드번호</th>
                                                     <th style="width: 250px;">명칭</th>
                                                     <th style="width: 80px; text-align:right;">필요수량</th>
@@ -448,7 +458,7 @@
                                                         <template v-for="g2 in getHistoryL2(g1.rows.map(r => r['Lot No.'] || r['할당 Lot']).join('\n'))">
                                                             <tr v-for="(r2, i2) in g2.rows" :key="r2.ID" style="background: #F0FDF4;">
                                                                 <td style="text-align:center;"><span class="level-badge lv2">2</span></td>
-                                                                <td v-if="i2 === 0" :rowspan="g2.span" style="font-size: 0.75rem; color: #15803D; padding-left: 20px;">└ {{ r2['상위Lot'] || r2['상위 Lot'] }}</td>
+                                                                <td v-if="i2 === 0" :rowspan="g2.span" style="font-size: 0.75rem; color: #15803D; padding-left: 20px; white-space: nowrap;">└ {{ r2['상위Lot'] || r2['상위 Lot'] }}</td>
                                                                 <td v-if="i2 === 0" :rowspan="g2.span">{{ r2['코드번호'] || r2['Code No.'] }}</td>
                                                                 <td v-if="i2 === 0" :rowspan="g2.span">{{ r2['원재료명'] || r2['명칭 / 구성품'] }}</td>
                                                                 <td v-if="i2 === 0" :rowspan="g2.span" style="text-align:right;">{{ g2.totalQty }}</td>
@@ -461,7 +471,7 @@
                                                                 <template v-for="g3 in getHistoryL3(g2.rows.map(r => r['Lot No.'] || r['할당 Lot']).join('\n'))">
                                                                     <tr v-for="(r3, i3) in g3.rows" :key="r3.ID" style="background: #FEFCE8;">
                                                                         <td style="text-align:center;"><span class="level-badge lv3">3</span></td>
-                                                                        <td v-if="i3 === 0" :rowspan="g3.span" style="font-size: 0.7rem; color: #854D02; padding-left: 40px;">└─ {{ r3['상위Lot'] || r3['상위 Lot'] }}</td>
+                                                                        <td v-if="i3 === 0" :rowspan="g3.span" style="font-size: 0.7rem; color: #854D02; padding-left: 40px; white-space: nowrap;">└─ {{ r3['상위Lot'] || r3['상위 Lot'] }}</td>
                                                                         <td v-if="i3 === 0" :rowspan="g3.span">{{ r3['코드번호'] || r3['Code No.'] }}</td>
                                                                         <td v-if="i3 === 0" :rowspan="g3.span">{{ r3['원재료명'] || r3['명칭 / 구성품'] }}</td>
                                                                         <td v-if="i3 === 0" :rowspan="g3.span" style="text-align:right;">{{ g3.totalQty }}</td>

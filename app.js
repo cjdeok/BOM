@@ -38,15 +38,45 @@ createApp({
         const isDragOver = ref(false);
         const csvInput = ref(null);
         const csvLevel0 = reactive({
-            productName: '',
-            productCode: '',
-            lotNo: '',
-            targetQty: '',
-            version: '',
-            mfgDate: new Date().toISOString().slice(0, 10),
-            requestTeam: '',
-            purpose: ''
+            productName: '',      // 제품명 (item_master.description)
+            modelName: '',        // 모델명 (A열: 코드번호)
+            productInfo: '',      // 제품정보 (item_master.detailed_description)
+            lotNo: '',            // LOT No. (수기)
+            version: '',          // Version (item_master.version)
+            targetQty: '',        // 제조수량 (파일명에서 파싱)
+            mfgDate: new Date().toISOString().slice(0, 10), // 제조일자 (수기, 기본 오늘)
+            expiryDate: '',       // 유효기간 (제조일자 +1년 -1일)
+            requestTeam: '',      // 의뢰팀 (수기)
+            purpose: ''           // 생산목적 (수기)
         });
+
+        // 제조일자 변경 시 유효기간 자동 계산
+        const calculateExpiry = () => {
+            if (!csvLevel0.mfgDate) return;
+            const d = new Date(csvLevel0.mfgDate);
+            if (isNaN(d)) return;
+            d.setFullYear(d.getFullYear() + 1);
+            d.setDate(d.getDate() - 1);
+            csvLevel0.expiryDate = d.toISOString().slice(0, 10);
+        };
+
+        // 모델명 변경 시 마스터 정보 조회
+        const fetchItemMasterDetail = async () => {
+            if (!csvLevel0.modelName) return;
+            try {
+                const res = await fetch(`/api/item_master/${csvLevel0.modelName}`);
+                const data = await res.json();
+                if (data && !data.error) {
+                    csvLevel0.productName = data.description || '';
+                    csvLevel0.productInfo = data.detailed_description || '';
+                    csvLevel0.version = data.version || '';
+                }
+            } catch (err) {
+                console.error('Error fetching item master detail:', err);
+            }
+            // 기존 문서번호 조회 연동
+            fetchDocMaster(csvLevel0.modelName);
+        };
 
         // =============================================
         // Instruction Doc Master (완제품 패널용)
@@ -82,15 +112,16 @@ createApp({
             }
         };
 
-        // v-model 감시 (Vue 3 setup 내에서 watch 대신 반응형 변수 변경 시 호출 방식 사용)
-        const onProductCodeChange = () => {
-            fetchDocMaster(csvLevel0.productCode);
+        // v-model 감시 (모델명 변경 시 마스터 정보 갱신)
+        const onModelNameChange = () => {
+            fetchItemMasterDetail();
         };
 
         const isCsvLevel0Valid = computed(() => {
-            return csvLevel0.productName && csvLevel0.productCode && csvLevel0.lotNo &&
+            return csvLevel0.productName && csvLevel0.modelName && csvLevel0.lotNo &&
                    csvLevel0.targetQty && csvLevel0.version && csvLevel0.mfgDate &&
-                   csvLevel0.requestTeam && csvLevel0.purpose;
+                   csvLevel0.requestTeam && csvLevel0.purpose && csvLevel0.productInfo &&
+                   csvLevel0.expiryDate;
         });
 
         // =============================================
@@ -254,6 +285,19 @@ createApp({
             const rows = csvRows.value;
             if (!rows || rows.length === 0) return;
 
+            // 유효기간 계산 (제조일자 + 1년 - 1일)
+            if (csvLevel0.mfgDate) {
+                try {
+                    const mfg = new Date(csvLevel0.mfgDate);
+                    if (!isNaN(mfg)) {
+                        const exp = new Date(mfg);
+                        exp.setFullYear(exp.getFullYear() + 1);
+                        exp.setDate(exp.getDate() - 1);
+                        csvLevel0.expiryDate = exp.toISOString().slice(0, 10);
+                    }
+                } catch(e) { console.error('Expiry calculation error:', e); }
+            }
+
             const getVal = (row, keys) => {
                 for (const k of keys) {
                     if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
@@ -335,7 +379,7 @@ createApp({
             csvRows.value = JSON.parse(JSON.stringify(rows));
             
             // 완제품 패널(PI 항목) 업데이트
-            fetchDocMaster(csvLevel0.productCode);
+            fetchDocMaster(csvLevel0.modelName);
             
             alert('상위 Lot 계층 구조 및 NC 특수 로직(BCM005)이 적용되었습니다.');
         };
@@ -450,28 +494,19 @@ createApp({
         // =============================================
         const loadCsvFile = (file) => {
             csvFileName.value = file.name;
-            
             const filename = file.name;
-            const codeNo = filename.substring(0, 5);
             const parts = filename.split('_');
-            let targetQty = '';
+            
+            // 파일명 기반 자동 파싱 (모델명_BOM_제조수량_...)
+            if (parts.length >= 1) {
+                csvLevel0.modelName = parts[0];
+                fetchItemMasterDetail(); 
+            }
             if (parts.length >= 3) {
-                targetQty = parts[2];
+                csvLevel0.targetQty = parts[2];
             }
             
-            fetch(`/api/item_master/${codeNo}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data && !data.error) {
-                        csvLevel0.productCode = data.code_no || codeNo;
-                        csvLevel0.productName = data.description || '';
-                        csvLevel0.targetQty = targetQty;
-                    } else {
-                        csvLevel0.productCode = codeNo;
-                        csvLevel0.targetQty = targetQty;
-                    }
-                })
-                .catch(e => console.error('item_master fetch error:', e));
+            calculateExpiry(); // 초기 유효기간 계산
 
             const tryParse = (encoding) => new Promise((resolve) => {
                 const reader = new FileReader();
@@ -495,8 +530,8 @@ createApp({
             csvFileName.value = ''; 
             // Level 0 입력값 초기화
             csvLevel0.productName = '';
-            csvLevel0.productCode = '';
-            csvLevel0.lotNo = '';
+            csvLevel0.modelName = '';
+            csvLevel0.productInfo = '';
             csvLevel0.targetQty = '';
             csvLevel0.version = '';
             csvLevel0.mfgDate = new Date().toISOString().slice(0, 10);
@@ -515,7 +550,7 @@ createApp({
             const level0Row = [
                 '0', 
                 '', 
-                csvLevel0.productCode, 
+                csvLevel0.modelName, 
                 csvLevel0.productName, 
                 csvLevel0.targetQty, 
                 'EA', 
@@ -718,12 +753,12 @@ createApp({
         };
 
         const openSemiLotModal = async () => {
-            if (!csvLevel0.productCode) {
-                alert("먼저 Level 0의 제품 Code No.를 확인해주세요.");
+            if (!csvLevel0.modelName) {
+                alert("먼저 Level 0의 모델명을 확인해주세요.");
                 return;
             }
             try {
-                const res = await fetch(`/api/doc_master/${csvLevel0.productCode}`);
+                const res = await fetch(`/api/doc_master/${csvLevel0.modelName}`);
                 const data = await res.json();
                 if (data && data.length) {
                     const filteredData = data.filter(d => {
@@ -735,7 +770,7 @@ createApp({
                     }));
                     showSemiLotModal.value = true;
                 } else {
-                    alert('해당 Code No.에 대한 반제품 제조지침서를 찾을 수 없습니다.');
+                    alert('해당 모델명에 대한 반제품 제조지침서를 찾을 수 없습니다.');
                 }
             } catch (e) {
                 alert('데이터 로드 실패: ' + e);
@@ -774,6 +809,7 @@ createApp({
         onMounted(() => {
             loadViewerData();
             loadHistoryLots();
+            calculateExpiry(); // 초기 오늘 날짜 기준 유효기간 설정
         });
 
         return {
@@ -786,8 +822,9 @@ createApp({
             csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
             triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
             showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,
+            onModelNameChange, calculateExpiry, fetchItemMasterDetail,
             isCsvLevel0Valid, applyLotHierarchy,
-            onProductCodeChange, piList,
+            piList,
             saveToDatabase,
             // History Tab
             historyLots, selectedHistoryLot, historyDetail, loadHistoryLots, loadHistoryDetail, historyByLevelGrouped, historyPiList, historySemiLotList,
