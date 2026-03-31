@@ -55,7 +55,9 @@ createApp({
             if (!csvLevel0.mfgDate) return;
             const d = new Date(csvLevel0.mfgDate);
             if (isNaN(d)) return;
+            const day = d.getDate();
             d.setFullYear(d.getFullYear() + 1);
+            if (d.getDate() !== day) d.setDate(0);
             d.setDate(d.getDate() - 1);
             csvLevel0.expiryDate = d.toISOString().slice(0, 10);
         };
@@ -291,7 +293,9 @@ createApp({
                     const mfg = new Date(csvLevel0.mfgDate);
                     if (!isNaN(mfg)) {
                         const exp = new Date(mfg);
+                        const day = exp.getDate();
                         exp.setFullYear(exp.getFullYear() + 1);
+                        if (exp.getDate() !== day) exp.setDate(0);
                         exp.setDate(exp.getDate() - 1);
                         csvLevel0.expiryDate = exp.toISOString().slice(0, 10);
                     }
@@ -744,7 +748,9 @@ createApp({
             if (!mfgDate) return '';
             const d = parseDateInput(mfgDate);
             if (!d || isNaN(d)) return '';
+            const day = d.getDate();
             d.setMonth(d.getMonth() + 13);
+            if (d.getDate() !== day) d.setDate(0);
             d.setDate(d.getDate() - 1);
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
