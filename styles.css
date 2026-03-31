@@ -62,6 +62,7 @@ body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: v
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
 .btn-ghost { background: transparent; color: var(--text-muted); }
 .btn-ghost:hover { background: #F1F5F9; color: var(--text-main); }
+.btn-mini { padding: 4px 10px; font-size: 0.72rem; min-width: 90px; border-radius: 6px; }
 
 /* Tables Modernized */
 .table-container { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }

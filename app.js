@@ -251,6 +251,15 @@ createApp({
             }));
         });
 
+        // 새 버튼 기능 (스텁)
+        const openPackagingInstruction = (pi) => {
+            alert(`[포장지시서] ${pi.latestDocNo || '문서'} 정보로 이동합니다.`);
+        };
+
+        const openProductManagement = (pi) => {
+            alert(`[완제품관리] ${pi.latestDocNo || '문서'} 관리 화면으로 이동합니다.`);
+        };
+
         const historySemiLotList = computed(() => {
             if (!historyDetail.value) return [];
             const sum = historyDetail.value.instruction_summary || [];
@@ -834,7 +843,9 @@ createApp({
             saveToDatabase,
             // History Tab
             historyLots, selectedHistoryLot, historyDetail, loadHistoryLots, loadHistoryDetail, historyByLevelGrouped, historyPiList, historySemiLotList,
-            getHistoryL2, getHistoryL3, historyDepth, setHistoryDepth
+            getHistoryL2, getHistoryL3, historyDepth, setHistoryDepth,
+            // New Buttons
+            openPackagingInstruction, openProductManagement
         };
     }
 }).mount('#app');
