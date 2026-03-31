@@ -96,29 +96,38 @@ def save_instruction():
         
         # 1. level0 저장 (스키마에 맞춰 필드명 매핑)
         l0 = data.get('level0', {})
+        
+        # item_master에서 category 조회
+        cursor.execute('SELECT category FROM item_master WHERE code_no = ?', (l0.get('modelName'),))
+        row = cursor.fetchone()
+        l0_category = row['category'] if row else None
+
         cursor.execute("""
-            INSERT INTO level0 ("Level", "제품코드", "제품명", "제품정보", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적", "유효기간")
-            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (l0.get('modelName'), l0.get('productName'), l0.get('productInfo'), l0.get('lotNo'), l0.get('targetQty'), l0.get('version'), l0.get('mfgDate'), l0.get('requestTeam'), l0.get('purpose'), l0.get('expiryDate')))
+            INSERT INTO level0 ("Level", "제품코드", "구분", "제품명", "제품정보", "LOT NO.", "생산 수량(kit)", "제품버전", "제조일자", "의뢰팀", "생산목적", "유효기간")
+            VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (l0.get('modelName'), l0_category, l0.get('productName'), l0.get('productInfo'), l0.get('lotNo'), l0.get('targetQty'), l0.get('version'), l0.get('mfgDate'), l0.get('requestTeam'), l0.get('purpose'), l0.get('expiryDate')))
         
         # 2. level1, 2, 3 저장
         for lvl in [1, 2, 3]:
             rows = data.get(f'level{lvl}', [])
-            table_name = f'level{lvl}'
             for r in rows:
-                # DB 필드명 추출 (JSON 키와 다를 수 있으므로 정규화)
-                # r.keys()가 ['Level', '상위 Lot', 'Code No.', '명칭 / 구성품', '필요 수량', '단위', '할당 Lot', '유효기간', '할당수량'] 형태임
-                
+                code_no = r.get('Code No.')
+                # item_master에서 category 및 manufacturer 조회
+                cursor.execute('SELECT category, manufacturer FROM item_master WHERE code_no = ?', (code_no,))
+                m_row = cursor.fetchone()
+                category = m_row['category'] if m_row else None
+                mfr = m_row['manufacturer'] if m_row else None
+
                 if lvl == 1:
                     cursor.execute(f"""
-                        INSERT INTO level1 ("Level", "상위Lot", "코드번호", "구성품 명칭", "Lot No.", "제조일자", "유효기간", "포장시 요구량", "단위")
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (lvl, r.get('상위 Lot'), r.get('Code No.'), r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
+                        INSERT INTO level1 ("Level", "상위Lot", "코드번호", "구분", "구성품 명칭", "Lot No.", "제조일자", "유효기간", "포장시 요구량", "단위")
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (lvl, r.get('상위 Lot'), code_no, category, r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
                 else:
                     cursor.execute(f"""
-                        INSERT INTO level{lvl} ("Level", "상위Lot", "코드번호", "원재료명", "Lot No.", "제조일자", "유효기간", "제조량", "단위")
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (lvl, r.get('상위 Lot'), r.get('Code No.'), r.get('명칭 / 구성품'), r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
+                        INSERT INTO level{lvl} ("Level", "상위Lot", "코드번호", "구분", "원재료명", "제조사", "Lot No.", "제조일자", "유효기간", "제조량", "단위")
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (lvl, r.get('상위 Lot'), code_no, category, r.get('명칭 / 구성품'), mfr, r.get('할당 Lot'), l0['mfgDate'], r.get('유효기간'), r.get('할당수량'), r.get('단위')))
         
         # 3. instruction_summary 저장
         semi_lots = data.get('instruction_summary', [])
