@@ -12,25 +12,42 @@
 </head>
 <body>
 <div id="app" v-cloak>
-    <div class="app-header">
-        <div class="branding">
-            <span class="branding-icon">🧬</span>
-            <h1>DxMe® BOM Integrated System</h1>
-        </div>
-        <div class="nav-tabs">
-            <div :class="['nav-tab', { active: currentTab === 'viewer' }]" @click="currentTab = 'viewer'">
-                <i class="fas fa-search" style="margin-right:8px;"></i> BOM 조회
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-icon">🧬</div>
+                <div class="sidebar-brand-title">DxMe® BOM</div>
+                <div class="sidebar-brand-sub">Integrated System</div>
             </div>
-            <div :class="['nav-tab', { active: currentTab === 'upload-bom' }]" @click="currentTab = 'upload-bom'">
-                <i class="fas fa-clipboard-list" style="margin-right:8px;"></i> BOM_제조지시 실행
+            <nav class="sidebar-nav">
+                <div class="sidebar-nav-label">메뉴</div>
+                <div :class="['sidebar-nav-item', { active: currentTab === 'viewer' }]" @click="currentTab = 'viewer'">
+                    <i class="fas fa-search"></i> <span>BOM 조회</span>
+                </div>
+                <div :class="['sidebar-nav-item', { active: currentTab === 'upload-bom' }]" @click="currentTab = 'upload-bom'">
+                    <i class="fas fa-clipboard-list"></i> <span>제조지시 실행</span>
+                </div>
+                <div :class="['sidebar-nav-item', { active: currentTab === 'history' }]" @click="currentTab = 'history'">
+                    <i class="fas fa-history"></i> <span>제조지시 기록</span>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <i class="fas fa-cog" style="margin-right:6px;"></i> Antigravity v3.0
             </div>
-            <div :class="['nav-tab', { active: currentTab === 'history' }]" @click="currentTab = 'history'">
-                <i class="fas fa-history" style="margin-right:8px;"></i> 제조지시 기록
-            </div>
-        </div>
-    </div>
+        </aside>
 
-    <div class="container">
+        <!-- Main Area -->
+        <main class="app-main">
+            <div class="app-topbar">
+                <div class="breadcrumb">
+                    <span>DxMe®</span>
+                    <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
+                    <span class="breadcrumb-active">{{ currentTab === 'viewer' ? 'BOM 조회' : currentTab === 'upload-bom' ? '제조지시 실행' : '제조지시 기록' }}</span>
+                </div>
+            </div>
+
+            <div class="container">
         <!-- TAB 1: BOM 조회 (Viewer) -->
         <div v-if="currentTab === 'viewer'">
             <div v-if="isViewLoading" class="loading-spinner">
@@ -538,6 +555,8 @@
                 </div>
             </div>
         </div>
+            </div>
+        </main>
     </div>
 
     <!-- Modals -->
