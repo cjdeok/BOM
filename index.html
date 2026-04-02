@@ -356,12 +356,15 @@
                             </div>
                             <div class="side-card-body">
                                 <div v-if="semiLotList.length > 0" class="panel-list">
-                                    <div v-for="semi in semiLotList" :key="semi.id" class="panel-item" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-bottom: 1px dashed var(--border);">
-                                        <div style="display: flex; justify-content: space-between; width: 100%;">
+                                    <div v-for="(semi, sIdx) in semiLotList" :key="'us-' + sIdx + '-' + (semi.id || semi.division)" class="panel-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px dashed var(--border);">
+                                        <div style="display: flex; flex-direction: column; gap: 4px;">
                                             <span style="font-weight: 700; color: var(--accent);">{{ semi.division }}</span>
+                                            <div v-if="semi.calcLot" style="font-family: monospace; font-size: 0.8rem; color: var(--primary); font-weight: 600;">{{ semi.calcLot }}</div>
+                                            <div v-else style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">Lot 미생성</div>
                                         </div>
-                                        <div v-if="semi.calcLot" style="font-family: monospace; font-size: 0.8rem; color: var(--primary); font-weight: 600;">{{ semi.calcLot }}</div>
-                                        <div v-else style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">Lot 미생성</div>
+                                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                                            <button type="button" class="btn btn-outline btn-mini" @click="openUploadSemiProductManagement(semi)">반제품 관리</button>
+                                        </div>
                                     </div>
                                 </div>
                                 <p v-else style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">
@@ -513,9 +516,15 @@
                                 <div class="side-card">
                                     <div class="side-card-header"><i class="fas fa-industry" style="color: var(--accent);"></i> 반제품</div>
                                     <div class="side-card-body">
-                                        <div v-for="semi in historySemiLotList" class="panel-item" style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border-bottom: 1px dashed var(--border);">
-                                            <div style="font-weight:700; color:var(--accent);">{{ semi.division }}</div>
-                                            <div style="font-family:monospace; font-size:0.85rem; color:var(--primary); font-weight:600;">{{ semi.calc_lot || semi.calcLot }}</div>
+                                        <div v-for="(semi, semiIdx) in historySemiLotList" :key="'hsemi-' + semiIdx + '-' + (semi.calcLot || semi.division || '')" class="panel-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px dashed var(--border);">
+                                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                                <div style="font-weight:700; color:var(--accent);">{{ semi.division }}</div>
+                                                <div style="font-family:monospace; font-size:0.85rem; color:var(--primary); font-weight:600;">{{ semi.calcLot || semi.calc_lot }}</div>
+                                            </div>
+                                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                                <button type="button" class="btn btn-outline btn-mini" @click="openHistorySemiManufacturingRecord(semi)">제조기록서</button>
+                                                <button type="button" class="btn btn-outline btn-mini" @click="openHistorySemiProductManagement(semi)">반제품 관리</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -700,6 +709,115 @@
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 20px; border-top: 1px solid var(--border);">
                 <button class="btn btn-outline" @click="showProductManagementModal = false">취소</button>
                 <button class="btn btn-success" @click="downloadProductManagementFile"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 반제품 제조기록서 (제조지시 기록) -->
+    <div class="modal-overlay" v-if="showSemiMrModal" @click.self="showSemiMrModal = false">
+        <div class="modal-box" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-alt" style="color: var(--accent);"></i> 반제품 제조기록서</h3>
+                <button type="button" class="btn btn-ghost" @click="showSemiMrModal = false">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="card" style="margin-bottom: 16px; border: 1px solid rgba(16, 185, 129, 0.35);">
+                    <div class="card-body">
+                        <div class="form-grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="info-cell"><div class="lbl">약어 (Division)</div><div class="val" style="font-weight:700; color:var(--accent);">{{ semiMrPreview.division }}</div></div>
+                            <div class="info-cell"><div class="lbl">제조지침서 No.</div><div class="val">{{ semiMrPreview.instructionNo }}</div></div>
+                            <div class="info-cell"><div class="lbl">반제품 Lot</div><div class="val" style="font-weight:700; color:var(--primary); font-family: monospace;">{{ semiMrPreview.lotNo }}</div></div>
+                            <div class="info-cell"><div class="lbl">생산량</div><div class="val">{{ semiMrPreview.productionQty }}</div></div>
+                            <div class="info-cell" style="grid-column: 1 / -1;"><div class="lbl">제조일자</div><div class="val">{{ semiMrPreview.mfgDate }}</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-container" style="margin-bottom: 16px;">
+                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: var(--accent);"><i class="fas fa-layer-group"></i> Level 2 — 원재료 (상위 Lot = 반제품 Lot)</h5>
+                    <table style="font-size: 0.85rem;">
+                        <thead>
+                            <tr style="background: #F0FDF4;">
+                                <th>코드번호</th>
+                                <th>명칭</th>
+                                <th>할당 Lot</th>
+                                <th style="text-align:right;">수량</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, ri) in semiMrPreview.l2" :key="'mr2-' + ri">
+                                <td style="font-weight:600;">{{ row['코드번호'] || row['Code No.'] }}</td>
+                                <td>{{ row['원재료명'] || row['명칭 / 구성품'] }}</td>
+                                <td style="font-family: monospace; color: var(--primary);">{{ row['Lot No.'] || row['할당 Lot'] }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row['제조량'] || row['할당수량'] || row['포장시 요구량'] }}</td>
+                            </tr>
+                            <tr v-if="!semiMrPreview.l2 || semiMrPreview.l2.length === 0">
+                                <td colspan="4" style="text-align:center; padding: 16px; color: var(--text-muted);">연결된 Level 2 행이 없습니다.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-container">
+                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #854D02;"><i class="fas fa-sitemap"></i> Level 3 — 하위 원재료</h5>
+                    <table style="font-size: 0.85rem;">
+                        <thead>
+                            <tr style="background: #FEFCE8;">
+                                <th>상위 Lot</th>
+                                <th>코드번호</th>
+                                <th>명칭</th>
+                                <th>할당 Lot</th>
+                                <th style="text-align:right;">수량</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, ri) in semiMrPreview.l3" :key="'mr3-' + ri">
+                                <td style="font-size: 0.8rem;">{{ row['상위Lot'] || row['상위 Lot'] }}</td>
+                                <td style="font-weight:600;">{{ row['코드번호'] || row['Code No.'] }}</td>
+                                <td>{{ row['원재료명'] || row['명칭 / 구성품'] }}</td>
+                                <td style="font-family: monospace;">{{ row['Lot No.'] || row['할당 Lot'] }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row['제조량'] || row['할당수량'] }}</td>
+                            </tr>
+                            <tr v-if="!semiMrPreview.l3 || semiMrPreview.l3.length === 0">
+                                <td colspan="5" style="text-align:center; padding: 16px; color: var(--text-muted);">Level 3 데이터가 없습니다.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--border);">
+                <button type="button" class="btn btn-primary" @click="showSemiMrModal = false">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 반제품 관리 미리보기 (제조지시 기록) -->
+    <div class="modal-overlay" v-if="showSemiMgmtModal" @click.self="showSemiMgmtModal = false">
+        <div class="modal-box" style="max-width: 720px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-industry" style="color: var(--accent);"></i> 반제품 관리</h3>
+                <button type="button" class="btn btn-ghost" @click="showSemiMgmtModal = false">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="card" style="border: 1px solid var(--accent);">
+                    <div class="card-body">
+                        <div class="form-grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="info-cell"><div class="lbl">약어</div><div class="val" style="font-weight:700; color:var(--accent);">{{ semiMgmtPreview.division }}</div></div>
+                            <div class="info-cell"><div class="lbl">제조지침서 No.</div><div class="val">{{ semiMgmtPreview.instructionNo }}</div></div>
+                            <div class="info-cell" style="grid-column: 1 / -1;"><div class="lbl">명칭 (A7)</div><div class="val">{{ semiMgmtPreview.A7 || semiMgmtPreview.productName || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">코드번호 (I7)</div><div class="val">{{ semiMgmtPreview.I7 || semiMgmtPreview.productCode || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">반제품 Lot (N7)</div><div class="val" style="font-weight:700; color:var(--primary); font-family: monospace;">{{ semiMgmtPreview.N7 || semiMgmtPreview.lotNo }}</div></div>
+                            <div class="info-cell"><div class="lbl">제조일자 (T7)</div><div class="val">{{ semiMgmtPreview.T7 || semiMgmtPreview.mfgDate }}</div></div>
+                            <div class="info-cell"><div class="lbl">유효기간 (A9)</div><div class="val" style="color:var(--accent); font-weight:700;">{{ semiMgmtPreview.A9 || semiMgmtPreview.expiry || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">수량 (I9)</div><div class="val" style="font-weight:700;">{{ semiMgmtPreview.I9 != null && semiMgmtPreview.I9 !== '' ? semiMgmtPreview.I9 : semiMgmtPreview.qty }}</div></div>
+                        </div>
+                    </div>
+                </div>
+                <p style="margin-top: 12px; padding: 10px; background: #F8FAFC; border-radius: 8px; font-size: 0.85rem; color: var(--text-muted);">
+                    <i class="fas fa-info-circle"></i> 엑셀 템플릿 <b>25BCE01-반제품 관리.xlsx</b>의 셀 A7, I7, N7, T7, A9, I9에 동일하게 출력됩니다. (완제품 관리 템플릿과 같은 입력 셀 배치를 사용합니다.)
+                </p>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border);">
+                <button type="button" class="btn btn-outline" @click="showSemiMgmtModal = false">취소</button>
+                <button type="button" class="btn btn-success" @click="downloadSemiProductManagementFile"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
             </div>
         </div>
     </div>

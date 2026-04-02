@@ -66,7 +66,7 @@ createApp({
         const fetchItemMasterDetail = async () => {
             if (!csvLevel0.modelName) return;
             try {
-                const res = await fetch(`/api/item_master/${csvLevel0.modelName}`);
+                const res = await fetch(`/api/item_master/${encodeURIComponent(csvLevel0.modelName)}`);
                 const data = await res.json();
                 if (data && !data.error) {
                     csvLevel0.productName = data.description || '';
@@ -105,9 +105,9 @@ createApp({
                 return;
             }
             try {
-                const res = await fetch(`/api/doc_master/${codeNo}`);
+                const res = await fetch(`/api/doc_master/${encodeURIComponent(codeNo)}`);
                 const data = await res.json();
-                docMasterList.value = data;
+                docMasterList.value = Array.isArray(data) ? data : [];
             } catch (err) {
                 console.error('Error fetching doc master:', err);
                 docMasterList.value = [];
@@ -392,11 +392,166 @@ createApp({
                 const div = (s['약어'] || s['division'] || '').toUpperCase();
                 // PI, FI, LA 제외 항목을 반제품으로 처리
                 return div && !div.includes('PI') && !div.includes('FI') && !div.includes('LA');
-            }).map(s => ({
-                division: s['약어'] || s['division'],
-                calcLot: s['Lot. No.'] || s['calcLot'] || s['calc_lot']
-            }));
+            }).map(s => {
+                const lot = s['Lot. No.'] || s['calcLot'] || s['calc_lot'] || '';
+                return {
+                    division: s['약어'] || s['division'],
+                    calcLot: lot,
+                    calc_lot: lot,
+                    instructionNo: s['제조지침서 No.'] || s['latest_doc_no'] || '',
+                    productionQty: s['생산량'] ?? '',
+                    mfgDate: s['제조일자'] || '',
+                    parentLot: s['상위Lot'] || ''
+                };
+            });
         });
+
+        const showSemiMrModal = ref(false);
+        const semiMrPreview = ref({
+            division: '', instructionNo: '', lotNo: '', productionQty: '', mfgDate: '', l2: [], l3: []
+        });
+        const showSemiMgmtModal = ref(false);
+        const semiMgmtPreview = ref({
+            A7: '', I7: '', N7: '', T7: '', A9: '', I9: '',
+            division: '', instructionNo: '', lotNo: '', productName: '', productCode: '',
+            mfgDate: '', expiry: '', qty: ''
+        });
+        const semiMgmtContext = ref({ parentLot: '', semiLot: '', division: '' });
+
+        const openHistorySemiManufacturingRecord = (semi) => {
+            if (!historyDetail.value) {
+                alert('먼저 Lot을 조회해 주세요.');
+                return;
+            }
+            const semiLots = splitLines(semi.calcLot || semi.calc_lot || '');
+            if (!semiLots.length) {
+                alert('반제품 Lot 정보가 없습니다.');
+                return;
+            }
+            const l2All = historyDetail.value.level2 || [];
+            const l3All = historyDetail.value.level3 || [];
+            const l2 = l2All.filter(r => {
+                const pl = r['상위Lot'] || r['상위 Lot'] || '';
+                const plParts = splitLines(pl);
+                return semiLots.some(sl => pl === sl || plParts.includes(sl));
+            });
+            const l2ChildLots = new Set();
+            l2.forEach(r => splitLines(r['Lot No.'] || r['할당 Lot'] || '').forEach(x => l2ChildLots.add(x)));
+            const l3 = l3All.filter(r => {
+                const pl = r['상위Lot'] || r['상위 Lot'] || '';
+                return l2ChildLots.has(pl);
+            });
+            semiMrPreview.value = {
+                division: semi.division || '',
+                instructionNo: semi.instructionNo || '',
+                lotNo: semi.calcLot || semi.calc_lot || '',
+                productionQty: semi.productionQty ?? '',
+                mfgDate: semi.mfgDate || '',
+                l2,
+                l3
+            };
+            showSemiMrModal.value = true;
+        };
+
+        const openHistorySemiProductManagement = async (semi) => {
+            const parent = selectedHistoryLot.value;
+            if (!parent) {
+                alert('Lot No.를 선택한 뒤 조회해 주세요.');
+                return;
+            }
+            const semiLot = semi.calcLot || semi.calc_lot || '';
+            const division = semi.division || '';
+            try {
+                const q = new URLSearchParams({ parent_lot: parent, semi_lot: semiLot, division });
+                const res = await fetch(`/api/semi_product_management_preview?${q}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                semiMgmtPreview.value = data;
+                semiMgmtContext.value = { parentLot: parent, semiLot, division };
+                showSemiMgmtModal.value = true;
+            } catch (e) {
+                alert('미리보기 로드 실패: ' + e);
+            }
+        };
+
+        const openUploadSemiProductManagement = async (semi) => {
+            const parent = csvLevel0.lotNo;
+            if (!parent || !String(parent).trim()) {
+                alert('Level 0의 LOT No.를 입력해 주세요.');
+                return;
+            }
+            const semiLot = semi.calcLot || '';
+            const division = semi.division || '';
+            try {
+                const q = new URLSearchParams({ parent_lot: parent.trim(), semi_lot: semiLot, division });
+                const res = await fetch(`/api/semi_product_management_preview?${q}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert(data.error + '\n(저장된 BOM이 DB에 없으면 제조지시 기록에서 조회하거나 먼저 DB 저장을 하세요.)');
+                    return;
+                }
+                semiMgmtPreview.value = data;
+                semiMgmtContext.value = { parentLot: parent.trim(), semiLot, division };
+                showSemiMgmtModal.value = true;
+            } catch (e) {
+                alert('미리보기 로드 실패: ' + e);
+            }
+        };
+
+        const downloadSemiProductManagementFile = async () => {
+            const { parentLot, semiLot, division } = semiMgmtContext.value;
+            if (!parentLot) return;
+            const q = new URLSearchParams({
+                parent_lot: parentLot,
+                semi_lot: semiLot || '',
+                division: division || ''
+            });
+            const url = `/api/semi_product_management_download?${q}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) {
+                    let msg = '다운로드에 실패했습니다.';
+                    try {
+                        const j = await res.json();
+                        if (j.error) msg = j.error;
+                    } catch (e) { /* ignore */ }
+                    alert(msg);
+                    return;
+                }
+                const ct = (res.headers.get('content-type') || '').toLowerCase();
+                if (ct.includes('json')) {
+                    try {
+                        const j = await res.json();
+                        alert(j.error || '서버가 오류 응답을 반환했습니다.');
+                    } catch (e) {
+                        alert('서버가 엑셀이 아닌 응답을 반환했습니다.');
+                    }
+                    return;
+                }
+                const blob = await res.blob();
+                const dispo = res.headers.get('content-disposition') || '';
+                let fname = `Semi_Product_Management_${String(semiLot || semiMgmtPreview.value.N7 || parentLot).replace(/[^\w\-]+/g, '_').slice(0, 80)}.xlsx`;
+                const m = dispo.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
+                if (m && m[1]) {
+                    try {
+                        fname = decodeURIComponent(m[1].trim().replace(/^["']|["']$/g, ''));
+                    } catch (e) { /* keep default */ }
+                }
+                const objUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = objUrl;
+                link.download = fname;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(objUrl);
+            } catch (e) {
+                alert('다운로드 오류: ' + e);
+            }
+        };
 
         // 기록 조회용 하위 항목 필터링 (Level 2)
         const getHistoryL2 = (l1Lot) => {
@@ -898,9 +1053,9 @@ createApp({
                 return;
             }
             try {
-                const res = await fetch(`/api/doc_master/${csvLevel0.modelName}`);
+                const res = await fetch(`/api/doc_master/${encodeURIComponent(csvLevel0.modelName)}`);
                 const data = await res.json();
-                if (data && data.length) {
+                if (Array.isArray(data) && data.length) {
                     const filteredData = data.filter(d => {
                         const div = String(d.division || '').toUpperCase();
                         return !div.startsWith('LA') && !div.startsWith('PI');
@@ -973,7 +1128,11 @@ createApp({
             openPackagingInstruction, openProductManagement,
             showPackagingModal, packagingPreview, downloadPackagingFile,
             // 완제품 관리 관련
-            showProductManagementModal, productManagementPreview, downloadProductManagementFile
+            showProductManagementModal, productManagementPreview, downloadProductManagementFile,
+            // 제조지시 기록 — 반제품
+            showSemiMrModal, semiMrPreview, openHistorySemiManufacturingRecord,
+            showSemiMgmtModal, semiMgmtPreview, semiMgmtContext,
+            openHistorySemiProductManagement, openUploadSemiProductManagement, downloadSemiProductManagementFile
         };
     }
 }).mount('#app');
