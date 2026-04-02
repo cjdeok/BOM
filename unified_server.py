@@ -1,11 +1,14 @@
+import calendar
 import sqlite3
 import pandas as pd
 import re
+from datetime import date, timedelta
 from flask import Flask, jsonify, send_from_directory, request, send_file
 import os
 import io
 import openpyxl
 from openpyxl.cell.cell import MergedCell
+from openpyxl.utils import get_column_letter
 import tempfile
 import urllib.parse
 
@@ -131,9 +134,22 @@ def get_packaging_preview(lot_no):
         cursor.execute('SELECT doc_name FROM instruction_doc_master WHERE code_no = ? AND division LIKE "%PI%"', (l0['제품코드'],))
         doc = cursor.fetchone()
         doc_name = doc['doc_name'] if doc else ""
+        cursor.execute(
+            'SELECT "포장시 요구량" FROM level1 WHERE "상위Lot" = ? AND UPPER(TRIM("코드번호")) LIKE "EMA015%" LIMIT 1',
+            (lot_no,),
+        )
+        ema_row = cursor.fetchone()
         conn.close()
-        
-        total_qty = l0.get('생산 수량(kit)') or 0
+        try:
+            pack_qty = float(str(ema_row[0]).replace(',', '')) if ema_row and ema_row[0] not in (None, '') else None
+        except (ValueError, TypeError):
+            pack_qty = None
+        kit_qty = l0.get('생산 수량(kit)') or 0
+        try:
+            kit_qty = float(str(kit_qty).replace(',', ''))
+        except (ValueError, TypeError):
+            kit_qty = 0.0
+        total_qty = pack_qty if pack_qty is not None else kit_qty
         return jsonify({
             "E4": doc_name, "A7": l0['제품명'], "J7": l0['제품버전'], "N7": total_qty,
             "S7": l0['제조일자'], "Z7": l0['유효기간'], "AE7": l0['LOT NO.'], "EMA015_items": l1_items
@@ -168,7 +184,21 @@ def download_packaging(lot_no):
         ws['S7']=l0['제조일자']; ws['Z7']=l0['유효기간']; ws['AE7']=l0['LOT NO.']
         
         mapping = {'EMA015':21,'EMA014':22,'CR(01)':23,'PC(01)':24,'NC(01)':25,'DA(01)':26,'RD(01)':27,'WS(01)':28,'TM(01)':29,'SS(01)':30,'EMA013':31,'PL(01)':32,'IFU':33}
-        total_qty = l0.get('생산 수량(kit)') or 0
+        try:
+            ema015 = next(
+                (x for x in l1_items if str(x.get('코드번호') or '').strip().upper().startswith('EMA015')),
+                None,
+            )
+            pq = ema015.get('포장시 요구량') if ema015 else None
+            pack_qty = float(str(pq).replace(',', '')) if pq not in (None, '') else None
+        except (ValueError, TypeError):
+            pack_qty = None
+        kq = l0.get('생산 수량(kit)') or 0
+        try:
+            kq = float(str(kq).replace(',', ''))
+        except (ValueError, TypeError):
+            kq = 0
+        total_qty = pack_qty if pack_qty is not None else kq
 
         for item in l1_items:
             code = str(item.get('코드번호') or '').strip()
@@ -181,7 +211,11 @@ def download_packaging(lot_no):
                     ws[f'AI{row_idx}'] = float(str(item.get('포장시 요구량') or 0).replace(',', ''))
             except: pass
             
-        ws['L33']=""; ws['S33']=l0['제조일자']; ws['X33']=""; ws['AI33']=total_qty; ws['N7']=total_qty
+        ws['L33'] = ''
+        ws['S33'] = l0['제조일자']
+        ws['X33'] = ''
+        ws['AI33'] = total_qty
+        ws['N7'] = total_qty
 
         tmp_fd, tmp_name = tempfile.mkstemp(suffix='.xlsx')
         os.close(tmp_fd)
@@ -242,10 +276,96 @@ def download_product_management(lot_no):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- 반제품 관리 API (25BCE01-반제품 관리.xlsx: 완제품 관리와 동일 입력 셀) ---
-# A7=반제품(구성품)명칭, I7=코드번호, N7=반제품 Lot, T7=제조일자, A9=유효기간, I9=생산·할당수량
+# --- 반제품 관리 API (25BCE01-반제품 관리.xlsx) ---
+# B2·M7(item_master unit)·H6~H9·X6·X7, B12:AD30 비움
 SEMI_PRODUCT_MGMT_TEMPLATE = '25BCE01-반제품 관리.xlsx'
 FINISHED_PRODUCT_MGMT_TEMPLATE = '25BCE01-완제품 관리.xlsx'
+
+
+def _semi_product_name_line_for_b2(cursor, a7_구성품명칭, code_i7):
+    """B2 첫 줄: Level1 구성품 명칭 → 없으면 item_master.description → 없으면 코드."""
+    n = str(a7_구성품명칭 or '').strip()
+    if n:
+        return n
+    ku = str(code_i7 or '').strip().upper()
+    if not ku:
+        return ''
+    cursor.execute(
+        'SELECT description FROM item_master WHERE UPPER(TRIM(code_no)) = ? LIMIT 1',
+        (ku,),
+    )
+    r = cursor.fetchone()
+    if r and r[0] is not None and str(r[0]).strip():
+        return str(r[0]).strip()
+    return str(code_i7 or '').strip()
+
+
+# B2 첫 줄: 약어(코드)별 고정 표기 (I7 정규화 키와 일치)
+SEMI_B2_DISPLAY_NAME_BY_CODE_KEY = {
+    'PB(01)': 'PBSA Buffer',
+    'CB(01)': 'Coating Buffer',
+    'WB(01)': 'Washing Buffer',
+}
+
+
+def _semi_b2_strip_plate_b_parenthetical(text):
+    """문자열에서 (Plate-B) 괄호 구문 제거."""
+    s = str(text or '')
+    s = re.sub(r'\s*\(\s*Plate-B\s*\)\s*', ' ', s, flags=re.IGNORECASE)
+    return re.sub(r'\s{2,}', ' ', s).strip()
+
+
+def _semi_b2_first_line_display(cursor, a7_구성품명칭, code_i7):
+    """B2 표시용 첫 줄: PB/CB/WB 고정명 → PL 계열은 (Plate-B) 제거 → 그 외는 기본 규칙."""
+    base = _semi_product_name_line_for_b2(cursor, a7_구성품명칭, code_i7)
+    ck = _instruction_code_key(code_i7)
+    if ck in SEMI_B2_DISPLAY_NAME_BY_CODE_KEY:
+        return SEMI_B2_DISPLAY_NAME_BY_CODE_KEY[ck]
+    if ck.startswith('PL'):
+        adj = _semi_b2_strip_plate_b_parenthetical(base)
+        return adj if adj else base
+    return base
+
+
+def _semi_mgmt_b2_cell_text(cursor, a7_구성품명칭, code_i7):
+    """「반제품 명\\n반제품 관리대장」형식."""
+    first = _semi_b2_first_line_display(cursor, a7_구성품명칭, code_i7)
+    if first:
+        return f'{first}\n반제품 관리대장'
+    return '반제품 관리대장'
+
+
+def _item_master_unit(cursor, code_no):
+    """item_master.unit (code_no 일치)."""
+    ku = str(code_no or '').strip().upper()
+    if not ku:
+        return ''
+    cursor.execute(
+        'SELECT unit FROM item_master WHERE UPPER(TRIM(code_no)) = ? LIMIT 1',
+        (ku,),
+    )
+    r = cursor.fetchone()
+    if r and r[0] is not None and str(r[0]).strip():
+        return str(r[0]).strip()
+    return ''
+
+
+def _semi_mgmt_clear_range_b12_ad30(ws):
+    """템플릿 B12:AD30 내용 삭제."""
+    for row in range(12, 31):
+        for col in range(2, 31):
+            _write_cell_safe(ws, f'{get_column_letter(col)}{row}', None)
+
+
+def _semi_mgmt_h9_fridge(division_or_code):
+    """H9: 약어/코드에 따른 냉장고 자산번호."""
+    d = re.sub(r'\s+', '', str(division_or_code or '').strip().upper())
+    if d.startswith('PB') or d.startswith('CB') or d.startswith('WB'):
+        return '냉장고(ESH-GP-088)'
+    for prefix in ('CR', 'PC', 'NC', 'DA', 'PL', 'RD', 'WS', 'TM', 'SS'):
+        if d.startswith(prefix):
+            return '냉장고(ESH-GP-089)'
+    return ''
 
 
 def _open_semi_mgmt_workbook():
@@ -343,9 +463,12 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
                     break
             if summ:
                 break
-        if div_u and abbrev and (abbrev == div_u or div_u in abbrev or abbrev in div_u):
-            summ = s
-            break
+        if div_u and abbrev:
+            ak = _instruction_code_key(abbrev)
+            dk = _instruction_code_key(div_u)
+            if ak == dk or (dk and dk in ak) or (ak and ak in dk):
+                summ = s
+                break
 
     if l1 is None and summ is None:
         return None, '반제품에 해당하는 Level1 또는 지시 요약을 찾을 수 없습니다.'
@@ -359,8 +482,6 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
     i9 = _to_float((l1 or {}).get('포장시 요구량')) if l1 else 0.0
     if i9 == 0 and l1:
         i9 = _to_float(l1.get('할당수량'))
-    if i9 == 0 and summ:
-        i9 = _to_float(summ.get('생산량'))
 
     n7 = str(semi_lot_raw).strip() if str(semi_lot_raw).strip() else ''
     if not n7 and l1:
@@ -390,6 +511,27 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
     elif not div_out and l1:
         div_out = str(l1.get('코드번호') or '')
 
+    b2 = _semi_mgmt_b2_cell_text(cursor, a7, i7)
+    # H6·X6·H7: instruction_summary만 (L1·N7·I9 폴백 없음)
+    h6 = x6 = h7 = ''
+    if summ:
+        h6 = str(summ.get('Lot. No.') or '').strip()
+        x6 = _fmt_date_yyyy_mm_dd(summ.get('제조일자'))
+        h7 = str(summ.get('생산량') or '').strip()
+    mfg_for_x7 = None
+    if summ and summ.get('제조일자'):
+        mfg_for_x7 = summ.get('제조일자')
+    elif l1 and l1.get('제조일자'):
+        mfg_for_x7 = l1.get('제조일자')
+    else:
+        mfg_for_x7 = l0.get('제조일자')
+    x7 = _expiry_plus_13_months_minus_1_day(mfg_for_x7)
+    if not x7:
+        x7 = str(a9 or '').strip()
+    h8 = '2 ~ 8℃'
+    h9 = _semi_mgmt_h9_fridge(div_out or i7)
+    m7 = _item_master_unit(cursor, i7)
+
     preview = {
         'A7': a7,
         'I7': i7,
@@ -397,13 +539,21 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
         'T7': t7,
         'A9': a9,
         'I9': i9,
+        'B2': b2,
+        'M7': m7,
+        'H6': h6,
+        'X6': x6,
+        'H7': h7,
+        'X7': x7,
+        'H8': h8,
+        'H9': h9,
         'division': div_out,
         'instructionNo': instr_no,
         'lotNo': n7,
         'productName': a7,
         'productCode': i7,
         'mfgDate': t7,
-        'expiry': a9,
+        'expiry': x7,
         'qty': i9,
     }
     return preview, None
@@ -441,12 +591,15 @@ def semi_product_management_download():
 
         wb = _open_semi_mgmt_workbook()
         ws = wb.active
-        _write_cell_safe(ws, 'A7', preview.get('A7') or '')
-        _write_cell_safe(ws, 'I7', preview.get('I7') or '')
-        _write_cell_safe(ws, 'N7', preview.get('N7') or '')
-        _write_cell_safe(ws, 'T7', preview.get('T7') or '')
-        _write_cell_safe(ws, 'A9', preview.get('A9') or '')
-        _write_cell_safe(ws, 'I9', preview.get('I9') or 0)
+        _semi_mgmt_clear_range_b12_ad30(ws)
+        _write_cell_safe(ws, 'B2', preview.get('B2') or '')
+        _write_cell_safe(ws, 'M7', preview.get('M7') or '')
+        _write_cell_safe(ws, 'H6', preview.get('H6') or '')
+        _write_cell_safe(ws, 'X6', preview.get('X6') or '')
+        _write_cell_safe(ws, 'H7', preview.get('H7') or '')
+        _write_cell_safe(ws, 'X7', preview.get('X7') or '')
+        _write_cell_safe(ws, 'H8', preview.get('H8') or '')
+        _write_cell_safe(ws, 'H9', preview.get('H9') or '')
 
         safe_name = re.sub(r'[^\w\-]+', '_', str(preview.get('N7') or 'semi'))[:80]
         tmp_fd, tmp_name = tempfile.mkstemp(suffix='.xlsx')
@@ -529,6 +682,50 @@ def _fmt_date_yyyy_mm_dd(val):
     return s[:10] if len(s) >= 10 else s
 
 
+def _parse_mfg_date_to_date(val):
+    """app.js parseDateInput 대응: 숫자 8자리(YYYYMMDD), 6자리(YYMMDD), YYYY-MM-DD."""
+    if val is None or str(val).strip() == '':
+        return None
+    s = str(val).strip()
+    digits = re.sub(r'\D', '', s)
+    if len(digits) >= 8:
+        try:
+            return date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+        except ValueError:
+            return None
+    if len(digits) == 6:
+        try:
+            return date(2000 + int(digits[:2]), int(digits[2:4]), int(digits[4:6]))
+        except ValueError:
+            return None
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', s)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    return None
+
+
+def _expiry_plus_13_months_minus_1_day(mfg_val):
+    """
+    반제품 유효기간: 제조일 + 13개월(말일 보정) − 1일.
+    app.js calcExpiryDate(setMonth+13), setDate(0) 보정, setDate(-1) 와 동치.
+    """
+    mfg = _parse_mfg_date_to_date(mfg_val)
+    if not mfg:
+        return ''
+    y, mo, d = mfg.year, mfg.month, mfg.day
+    total_m = y * 12 + (mo - 1) + 13
+    ny = total_m // 12
+    nm = total_m % 12 + 1
+    last = calendar.monthrange(ny, nm)[1]
+    nd = min(d, last)
+    d2 = date(ny, nm, nd)
+    d3 = d2 - timedelta(days=1)
+    return d3.strftime('%Y-%m-%d')
+
+
 def _lot_no_equiv_set(lot_str):
     """
     Lot 문자열 동치(날짜 접두만 다른 경우): 111127-01PB-01R3 ↔ 2011-11-27-01PB-01R3
@@ -556,16 +753,6 @@ def _lot_refs_equal(a, b):
     if a == b:
         return True
     return bool(_lot_no_equiv_set(a) & _lot_no_equiv_set(b))
-
-
-def _lot_no_normalize_yymmdd_prefix(lot_str):
-    """Lot 앞부분이 YYMMDD- 이면 20YY-MM-DD- 로 저장 형식 통일."""
-    s = str(lot_str or '').strip()
-    m = re.match(r'^(\d{2})(\d{2})(\d{2})(-.+)$', s)
-    if m:
-        yy, mm, dd, rest = m.groups()
-        return f'20{yy}-{mm}-{dd}{rest}'
-    return s
 
 
 def _gubun_from_item_master(cursor, code_no, memo):
@@ -803,7 +990,6 @@ def save_instruction():
         for item in summary_in:
             div = item.get('division') or item.get('약어') or ''
             calc_raw = item.get('calcLot') or item.get('Lot. No.') or ''
-            lot_stored = _lot_no_normalize_yymmdd_prefix(calc_raw)
             div_u = (div or '').strip().upper()
             is_pb_cb_wb = (
                 div_u.startswith('PB') or div_u.startswith('CB') or div_u.startswith('WB')
@@ -820,7 +1006,7 @@ def save_instruction():
                 '상위Lot': lot_no,
                 '약어': div,
                 '제조지침서 No.': item.get('latest_doc_no') or item.get('제조지침서 No.') or '',
-                'Lot. No.': lot_stored,
+                'Lot. No.': str(calc_raw).strip(),
                 '생산량': prod_qty,
                 '제조일자': _fmt_date_yyyy_mm_dd(
                     item.get('mfgDate') or item.get('제조일자') or l0_src.get('mfgDate') or l0_src.get('제조일자')

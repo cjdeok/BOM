@@ -640,7 +640,7 @@
                             <div class="info-cell"><div class="lbl">문서명 (E4)</div><div class="val">{{ packagingPreview.E4 }}</div></div>
                             <div class="info-cell"><div class="lbl">제품명 (A7)</div><div class="val">{{ packagingPreview.A7 }}</div></div>
                             <div class="info-cell"><div class="lbl">Version (J7)</div><div class="val">{{ packagingPreview.J7 }}</div></div>
-                            <div class="info-cell"><div class="lbl">총 포장수량 (N7)</div><div class="val" style="font-weight:700; color:var(--primary);">{{ packagingPreview.N7 }} EA</div></div>
+                            <div class="info-cell"><div class="lbl">총 포장수량 (N7)</div><div class="val" style="font-weight:700; color:var(--primary);">{{ packagingPreview.N7 }}ea</div></div>
                             <div class="info-cell"><div class="lbl">제조일자 (S7)</div><div class="val">{{ packagingPreview.S7 }}</div></div>
                             <div class="info-cell"><div class="lbl">유효기간 (Z7)</div><div class="val">{{ packagingPreview.Z7 }}</div></div>
                             <div class="info-cell"><div class="lbl">LOT NO. (AE7)</div><div class="val" style="font-weight:700;">{{ packagingPreview.AE7 }}</div></div>
@@ -653,7 +653,7 @@
                     <table style="font-size: 0.85rem;">
                         <thead>
                             <tr style="background-color: #F8FAFC;">
-                                <th style="width: 200px;">품목 정보 (Row)</th>
+                                <th style="width: 200px;">품목 정보</th>
                                 <th>할당 LOT (L)</th>
                                 <th>제조일자 (S)</th>
                                 <th>유효기간 (X)</th>
@@ -662,11 +662,11 @@
                         </thead>
                         <tbody>
                             <tr v-for="(item, idx) in packagingPreview.items_mapped" :key="idx">
-                                <td style="font-weight:700;">{{ item.label }} ({{ item.row }})</td>
+                                <td style="font-weight:700;">{{ item.label }}</td>
                                 <td style="font-weight:600; color:var(--primary); font-family: monospace;">{{ item.lotNo }}</td>
                                 <td style="color: var(--text-muted);">{{ packagingPreview.S7 }}</td>
                                 <td>{{ item.expiryDate }}</td>
-                                <td style="text-align:right; font-weight:700;">{{ item.qty }}</td>
+                                <td style="text-align:right; font-weight:700;">{{ item.qty }}<template v-if="item.row === 33">EA</template></td>
                             </tr>
                             <tr v-if="!packagingPreview.items_mapped || packagingPreview.items_mapped.length === 0">
                                 <td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted);">구성품 데이터가 없습니다.</td>
@@ -800,20 +800,19 @@
                 <div class="card" style="border: 1px solid var(--accent);">
                     <div class="card-body">
                         <div class="form-grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="info-cell" style="grid-column: 1 / -1;"><div class="lbl">B2 (반제품 명 / 반제품 관리대장)</div><div class="val" style="white-space: pre-wrap;">{{ semiMgmtPreview.B2 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">단위 (M7)</div><div class="val">{{ semiMgmtPreview.M7 || '—' }}</div></div>
                             <div class="info-cell"><div class="lbl">약어</div><div class="val" style="font-weight:700; color:var(--accent);">{{ semiMgmtPreview.division }}</div></div>
                             <div class="info-cell"><div class="lbl">제조지침서 No.</div><div class="val">{{ semiMgmtPreview.instructionNo }}</div></div>
-                            <div class="info-cell" style="grid-column: 1 / -1;"><div class="lbl">명칭 (A7)</div><div class="val">{{ semiMgmtPreview.A7 || semiMgmtPreview.productName || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">코드번호 (I7)</div><div class="val">{{ semiMgmtPreview.I7 || semiMgmtPreview.productCode || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">반제품 Lot (N7)</div><div class="val" style="font-weight:700; color:var(--primary); font-family: monospace;">{{ semiMgmtPreview.N7 || semiMgmtPreview.lotNo }}</div></div>
-                            <div class="info-cell"><div class="lbl">제조일자 (T7)</div><div class="val">{{ semiMgmtPreview.T7 || semiMgmtPreview.mfgDate }}</div></div>
-                            <div class="info-cell"><div class="lbl">유효기간 (A9)</div><div class="val" style="color:var(--accent); font-weight:700;">{{ semiMgmtPreview.A9 || semiMgmtPreview.expiry || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">수량 (I9)</div><div class="val" style="font-weight:700;">{{ semiMgmtPreview.I9 != null && semiMgmtPreview.I9 !== '' ? semiMgmtPreview.I9 : semiMgmtPreview.qty }}</div></div>
+                            <div class="info-cell"><div class="lbl">지시 Lot (H6)</div><div class="val" style="font-family: monospace;">{{ semiMgmtPreview.H6 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">지시 제조일자 (X6)</div><div class="val">{{ semiMgmtPreview.X6 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">사용량 (H7)</div><div class="val" style="font-weight:700;">{{ semiMgmtPreview.H7 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">유효기간 (X7)</div><div class="val">{{ semiMgmtPreview.X7 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">보관온도 (H8)</div><div class="val">{{ semiMgmtPreview.H8 || '—' }}</div></div>
+                            <div class="info-cell"><div class="lbl">냉장고 (H9)</div><div class="val">{{ semiMgmtPreview.H9 || '—' }}</div></div>
                         </div>
                     </div>
                 </div>
-                <p style="margin-top: 12px; padding: 10px; background: #F8FAFC; border-radius: 8px; font-size: 0.85rem; color: var(--text-muted);">
-                    <i class="fas fa-info-circle"></i> 엑셀 템플릿 <b>25BCE01-반제품 관리.xlsx</b>의 셀 A7, I7, N7, T7, A9, I9에 동일하게 출력됩니다. (완제품 관리 템플릿과 같은 입력 셀 배치를 사용합니다.)
-                </p>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border);">
                 <button type="button" class="btn btn-outline" @click="showSemiMgmtModal = false">취소</button>
