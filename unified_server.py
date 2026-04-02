@@ -515,16 +515,57 @@ def get_doc_master(code_no):
 
 
 def _fmt_date_yyyy_mm_dd(val):
-    """제조일자를 YYYY-MM-DD 문자열로 통일 (저장 시)."""
+    """제조일자를 YYYY-MM-DD 문자열로 통일 (저장 시). YYMMDD(6자리) → 20YY-MM-DD."""
     if val is None or val == '':
         return ''
     s = str(val).strip()
     if re.match(r'^\d{4}-\d{2}-\d{2}', s):
         return s[:10]
     digits = re.sub(r'\D', '', s)
+    if len(digits) == 6:
+        return f'20{digits[:2]}-{digits[2:4]}-{digits[4:6]}'
     if len(digits) >= 8:
         return f'{digits[:4]}-{digits[4:6]}-{digits[6:8]}'
     return s[:10] if len(s) >= 10 else s
+
+
+def _lot_no_equiv_set(lot_str):
+    """
+    Lot 문자열 동치(날짜 접두만 다른 경우): 111127-01PB-01R3 ↔ 2011-11-27-01PB-01R3
+    """
+    s = str(lot_str or '').strip()
+    if not s:
+        return frozenset()
+    out = {s}
+    m = re.match(r'^(\d{2})(\d{2})(\d{2})(-.+)$', s)
+    if m:
+        yy, mm, dd, rest = m.groups()
+        out.add(f'20{yy}-{mm}-{dd}{rest}')
+    m = re.match(r'^(20\d{2})-(\d{2})-(\d{2})(-.+)$', s)
+    if m:
+        y, mm, dd, rest = m.group(1), m.group(2), m.group(3), m.group(4)
+        out.add(f'{y[2:]}{mm}{dd}{rest}')
+    return frozenset(out)
+
+
+def _lot_refs_equal(a, b):
+    """instruction_summary Lot. No. 와 level3 상위Lot이 같은 반제품을 가리키는지."""
+    a, b = str(a or '').strip(), str(b or '').strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return bool(_lot_no_equiv_set(a) & _lot_no_equiv_set(b))
+
+
+def _lot_no_normalize_yymmdd_prefix(lot_str):
+    """Lot 앞부분이 YYMMDD- 이면 20YY-MM-DD- 로 저장 형식 통일."""
+    s = str(lot_str or '').strip()
+    m = re.match(r'^(\d{2})(\d{2})(\d{2})(-.+)$', s)
+    if m:
+        yy, mm, dd, rest = m.groups()
+        return f'20{yy}-{mm}-{dd}{rest}'
+    return s
 
 
 def _gubun_from_item_master(cursor, code_no, memo):
@@ -569,23 +610,28 @@ def _manufacturer_from_item_master(cursor, code_no, memo):
     return mfr
 
 
-def _l1_packaging_qty_for_instruction_summary(l1_raw, parent_lot, division, semi_lot):
+def _instruction_code_key(s):
+    """약어·코드번호 비교용(공백 제거, 대문자)."""
+    return re.sub(r'\s+', '', str(s or '').strip().upper())
+
+
+def _l1_row_for_instruction_summary(l1_raw, parent_lot, division, semi_lot):
     """
-    instruction_summary 생산량: Level1에서 상위Lot=생산Lot, 코드번호=약어(division),
-    할당 Lot이 반제품 Lot(calcLot)과 맞는 행의 포장시 요구량(또는 할당수량 등).
+    Level1에서 상위Lot=생산Lot, 코드번호=약어(division),
+    할당 Lot이 반제품 Lot(calcLot)과 맞는 첫 행(없으면 None).
     """
     parent_lot = (parent_lot or '').strip()
-    div = (division or '').strip().upper()
+    div_key = _instruction_code_key(division)
     semi_s = str(semi_lot or '').strip()
     semi_tokens = _split_lot_tokens(semi_lot)
-    if not parent_lot or not div or not semi_s:
-        return ''
+    if not parent_lot or not div_key or not semi_s:
+        return None
     for r in l1_raw:
         pl = str(_row_get(r, '상위Lot', '상위 Lot', '상위 LOT') or '').strip()
         if pl != parent_lot:
             continue
         code = str(_row_get(r, '코드번호', 'Code No.', 'Code') or '').strip().upper()
-        if code != div:
+        if _instruction_code_key(code) != div_key:
             continue
         lot_cell = str(_row_get(r, 'Lot No.', '할당 Lot', '할당Lot') or '').strip()
         lot_set = set(_split_lot_tokens(lot_cell))
@@ -603,10 +649,43 @@ def _l1_packaging_qty_for_instruction_summary(l1_raw, parent_lot, division, semi
                 break
         if not ok:
             continue
-        q = _row_get(r, '포장시 요구량', '할당수량', '필요 수량', '제조량')
-        if q is None or str(q).strip() == '':
+        return r
+    return None
+
+
+def _l1_packaging_qty_for_instruction_summary(l1_raw, parent_lot, division, semi_lot):
+    """
+    instruction_summary 생산량: Level1에서 상위Lot=생산Lot, 코드번호=약어(division),
+    할당 Lot이 반제품 Lot(calcLot)과 맞는 행의 포장시 요구량(또는 할당수량 등).
+    """
+    r = _l1_row_for_instruction_summary(l1_raw, parent_lot, division, semi_lot)
+    if not r:
+        return ''
+    q = _row_get(r, '포장시 요구량', '할당수량', '필요 수량', '제조량')
+    if q is None or str(q).strip() == '':
+        return ''
+    return str(q).strip()
+
+
+def _l3_cam006_alloc_for_instruction_lot(l3_raw, instruction_lot):
+    """
+    업로드 CSV level3: PB/CB/WB 반제품 Lot(calcLot)과 상위Lot이 동치(날짜 접두 포함)인 행 중
+    코드번호 CAM006(또는 자료에 CMA006으로 적힌 경우)의 할당수량만 사용(첫 건, 합산 없음).
+    """
+    semi = str(instruction_lot or '').strip()
+    if not semi:
+        return ''
+    cam_keys = frozenset({'CAM006', 'CMA006'})
+    for r in l3_raw:
+        code = str(_row_get(r, '코드번호', 'Code No.', 'Code') or '').strip().upper()
+        if _instruction_code_key(code) not in cam_keys:
             continue
-        return str(q).strip()
+        pl3 = str(_row_get(r, '상위Lot', '상위 Lot', '상위 LOT') or '').strip()
+        if not _lot_refs_equal(semi, pl3):
+            continue
+        q = _row_get(r, '할당수량')
+        if q is not None and str(q).strip() != '':
+            return str(q).strip()
     return ''
 
 
@@ -713,25 +792,35 @@ def save_instruction():
             }
 
         l1_raw = data.get('level1') or []
+        l2_raw = data.get('level2') or []
+        l3_raw = data.get('level3') or []
         l1_rows = [norm_l1(r) for r in l1_raw]
-        l2_rows = [norm_l2(r) for r in (data.get('level2') or [])]
-        l3_rows = [norm_l2(r) for r in (data.get('level3') or [])]
+        l2_rows = [norm_l2(r) for r in l2_raw]
+        l3_rows = [norm_l2(r) for r in l3_raw]
 
         summary_in = data.get('instruction_summary') or []
         summary_rows = []
         for item in summary_in:
             div = item.get('division') or item.get('약어') or ''
-            calc = item.get('calcLot') or item.get('Lot. No.') or ''
-            qty_l1 = _l1_packaging_qty_for_instruction_summary(l1_raw, lot_no, div, calc)
+            calc_raw = item.get('calcLot') or item.get('Lot. No.') or ''
+            lot_stored = _lot_no_normalize_yymmdd_prefix(calc_raw)
             div_u = (div or '').strip().upper()
-            if not qty_l1 and div_u.startswith('PI'):
-                qty_l1 = _l1_packaging_qty_for_cr(l1_raw, lot_no)
-            prod_qty = qty_l1 if qty_l1 else (item.get('생산량') or item.get('productionQty') or '')
+            is_pb_cb_wb = (
+                div_u.startswith('PB') or div_u.startswith('CB') or div_u.startswith('WB')
+            )
+            if is_pb_cb_wb:
+                prod_qty = _l3_cam006_alloc_for_instruction_lot(l3_raw, calc_raw)
+            else:
+                prod_qty = ''
+                qty_l1 = _l1_packaging_qty_for_instruction_summary(l1_raw, lot_no, div, calc_raw)
+                if not qty_l1 and div_u.startswith('PI'):
+                    qty_l1 = _l1_packaging_qty_for_cr(l1_raw, lot_no)
+                prod_qty = qty_l1 if qty_l1 else (item.get('생산량') or item.get('productionQty') or '')
             summary_rows.append({
                 '상위Lot': lot_no,
                 '약어': div,
                 '제조지침서 No.': item.get('latest_doc_no') or item.get('제조지침서 No.') or '',
-                'Lot. No.': calc,
+                'Lot. No.': lot_stored,
                 '생산량': prod_qty,
                 '제조일자': _fmt_date_yyyy_mm_dd(
                     item.get('mfgDate') or item.get('제조일자') or l0_src.get('mfgDate') or l0_src.get('제조일자')
