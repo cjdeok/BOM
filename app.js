@@ -408,14 +408,32 @@ createApp({
 
         const showSemiMrModal = ref(false);
         const semiMrPreview = ref({
-            division: '', instructionNo: '', lotNo: '', productionQty: '', mfgDate: '', l2: [], l3: []
+            division: '', instructionNo: '', lotNo: '', productionQty: '', mfgDate: '', l2: [], l3: [],
+            /** PB·CB·WB: Level 3만 표시(Level 2 숨김). 그 외 반제품은 Level 2만(Level 3 미사용) */
+            onlyLevel3Materials: false,
         });
+
+        const semiMrUsesLevel3Only = (division) => {
+            const d = String(division || '').toUpperCase().replace(/\s+/g, '');
+            if (!d) return false;
+            return d.startsWith('PB') || d.startsWith('CB') || d.startsWith('WB');
+        };
         const showSemiMgmtModal = ref(false);
         const semiMgmtPreview = ref({
             A7: '', I7: '', N7: '', T7: '', A9: '', I9: '',
             division: '', instructionNo: '', lotNo: '', productName: '', productCode: '',
-            mfgDate: '', expiry: '', qty: ''
+            mfgDate: '', expiry: '', qty: '',
+            bufferSemiProduct: false,
+            bufferUsageLedger: [],
+            bufferLedgerInitialStock: 0,
+            nonBufferLevel1: null,
+            nonBufferPerformanceTestUsage: null,
+            nonBufferInventoryAfterPerfTest: null,
+            nonBufferLevel1LedgerRows: [],
+            nonBufferLedgerInitialStock: null,
         });
+        /** 비버퍼 반제품 관리 — 성능검사 행 사용일자(수기, 미저장) */
+        const semiMgmtPerfTestDate = ref('');
         const semiMgmtContext = ref({ parentLot: '', semiLot: '', division: '' });
 
         const openHistorySemiManufacturingRecord = (semi) => {
@@ -435,20 +453,46 @@ createApp({
                 const plParts = splitLines(pl);
                 return semiLots.some(sl => pl === sl || plParts.includes(sl));
             });
+            const onlyLevel3Materials = semiMrUsesLevel3Only(semi.division);
             const l2ChildLots = new Set();
             l2.forEach(r => splitLines(r['Lot No.'] || r['할당 Lot'] || '').forEach(x => l2ChildLots.add(x)));
-            const l3 = l3All.filter(r => {
-                const pl = r['상위Lot'] || r['상위 Lot'] || '';
-                return l2ChildLots.has(pl);
-            });
+            let l3 = [];
+            if (onlyLevel3Materials) {
+                /** Level3 상위Lot이 (1) L2 할당 Lot이거나, (2) 반제품 Lot을 직접 가리키는 경우 */
+                const l3ParentMatchesSemiLot = (parentLotRaw) => {
+                    const pl = String(parentLotRaw || '').trim();
+                    if (!pl) return false;
+                    const plParts = splitLines(pl);
+                    return semiLots.some(sl => {
+                        if (!sl) return false;
+                        return pl === sl || plParts.includes(sl);
+                    });
+                };
+                l3 = l3All.filter(r => {
+                    const pl = r['상위Lot'] || r['상위 Lot'] || '';
+                    const plTokens = splitLines(pl);
+                    if (plTokens.some(t => t && l2ChildLots.has(t)) || l2ChildLots.has(pl)) return true;
+                    if (l3ParentMatchesSemiLot(pl)) return true;
+                    return false;
+                });
+            }
+            const l0 = historyDetail.value.level0 || {};
+            let productionQty = semi.productionQty ?? '';
+            if (!onlyLevel3Materials) {
+                const kit = l0['생산 수량(kit)'];
+                const alt = l0.targetQty;
+                if (kit !== undefined && kit !== null && String(kit).trim() !== '') productionQty = kit;
+                else if (alt !== undefined && alt !== null && String(alt).trim() !== '') productionQty = alt;
+            }
             semiMrPreview.value = {
                 division: semi.division || '',
                 instructionNo: semi.instructionNo || '',
                 lotNo: semi.calcLot || semi.calc_lot || '',
-                productionQty: semi.productionQty ?? '',
+                productionQty,
                 mfgDate: semi.mfgDate || '',
-                l2,
-                l3
+                l2: onlyLevel3Materials ? [] : l2,
+                l3,
+                onlyLevel3Materials,
             };
             showSemiMrModal.value = true;
         };
@@ -470,6 +514,7 @@ createApp({
                     return;
                 }
                 semiMgmtPreview.value = data;
+                semiMgmtPerfTestDate.value = '';
                 semiMgmtContext.value = { parentLot: parent, semiLot, division };
                 showSemiMgmtModal.value = true;
             } catch (e) {
@@ -494,6 +539,7 @@ createApp({
                     return;
                 }
                 semiMgmtPreview.value = data;
+                semiMgmtPerfTestDate.value = '';
                 semiMgmtContext.value = { parentLot: parent.trim(), semiLot, division };
                 showSemiMgmtModal.value = true;
             } catch (e) {
@@ -501,14 +547,18 @@ createApp({
             }
         };
 
-        const downloadSemiProductManagementFile = async () => {
+        const downloadSemiProductManagementFile = async (includeUsageHistory) => {
             const { parentLot, semiLot, division } = semiMgmtContext.value;
             if (!parentLot) return;
             const q = new URLSearchParams({
                 parent_lot: parentLot,
                 semi_lot: semiLot || '',
-                division: division || ''
+                division: division || '',
+                include_usage_history: includeUsageHistory ? '1' : '0',
             });
+            if (includeUsageHistory) {
+                q.set('perf_test_date', semiMgmtPerfTestDate.value || '');
+            }
             const url = `/api/semi_product_management_download?${q}`;
             try {
                 const res = await fetch(url);
@@ -533,7 +583,7 @@ createApp({
                 }
                 const blob = await res.blob();
                 const dispo = res.headers.get('content-disposition') || '';
-                let fname = `Semi_Product_Management_${String(semiLot || semiMgmtPreview.value.N7 || parentLot).replace(/[^\w\-]+/g, '_').slice(0, 80)}.xlsx`;
+                let fname = `Semi_Product_Management_${String(semiLot || semiMgmtPreview.value.N7 || parentLot).replace(/[^\w\-]+/g, '_').slice(0, 80)}${includeUsageHistory ? '_usage_history' : '_no_usage_history'}.xlsx`;
                 const m = dispo.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
                 if (m && m[1]) {
                     try {
@@ -1131,7 +1181,7 @@ createApp({
             showProductManagementModal, productManagementPreview, downloadProductManagementFile,
             // 제조지시 기록 — 반제품
             showSemiMrModal, semiMrPreview, openHistorySemiManufacturingRecord,
-            showSemiMgmtModal, semiMgmtPreview, semiMgmtContext,
+            showSemiMgmtModal, semiMgmtPreview, semiMgmtContext, semiMgmtPerfTestDate,
             openHistorySemiProductManagement, openUploadSemiProductManagement, downloadSemiProductManagementFile
         };
     }

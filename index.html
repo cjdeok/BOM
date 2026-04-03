@@ -751,7 +751,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="table-container" style="margin-bottom: 16px;">
+                <div v-if="!semiMrPreview.onlyLevel3Materials" class="table-container" style="margin-bottom: 16px;">
                     <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: var(--accent);"><i class="fas fa-layer-group"></i> Level 2 — 원재료 (상위 Lot = 반제품 Lot)</h5>
                     <table style="font-size: 0.85rem;">
                         <thead>
@@ -775,12 +775,15 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="table-container">
-                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #854D02;"><i class="fas fa-sitemap"></i> Level 3 — 하위 원재료</h5>
+                <!-- 버퍼(PB·CB·WB)만 Level 3 표시, 그 외 반제품은 Level 2만 -->
+                <div v-if="semiMrPreview.onlyLevel3Materials" class="table-container">
+                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #854D02;">
+                        <i class="fas fa-sitemap"></i>
+                        Level 3 — 원재료 (DB level3 테이블)
+                    </h5>
                     <table style="font-size: 0.85rem;">
                         <thead>
                             <tr style="background: #FEFCE8;">
-                                <th>상위 Lot</th>
                                 <th>코드번호</th>
                                 <th>명칭</th>
                                 <th>할당 Lot</th>
@@ -789,14 +792,13 @@
                         </thead>
                         <tbody>
                             <tr v-for="(row, ri) in semiMrPreview.l3" :key="'mr3-' + ri">
-                                <td style="font-size: 0.8rem;">{{ row['상위Lot'] || row['상위 Lot'] }}</td>
                                 <td style="font-weight:600;">{{ row['코드번호'] || row['Code No.'] }}</td>
                                 <td>{{ row['원재료명'] || row['명칭 / 구성품'] }}</td>
                                 <td style="font-family: monospace;">{{ row['Lot No.'] || row['할당 Lot'] }}</td>
                                 <td style="text-align:right; font-weight:600;">{{ row['제조량'] || row['할당수량'] }}</td>
                             </tr>
                             <tr v-if="!semiMrPreview.l3 || semiMrPreview.l3.length === 0">
-                                <td colspan="5" style="text-align:center; padding: 16px; color: var(--text-muted);">Level 3 데이터가 없습니다.</td>
+                                <td colspan="4" style="text-align:center; padding: 16px; color: var(--text-muted);">DB level3 테이블에 해당 반제품 하위 행이 없습니다.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -810,7 +812,7 @@
 
     <!-- 반제품 관리 미리보기 (제조지시 기록) -->
     <div class="modal-overlay" v-if="showSemiMgmtModal" @click.self="showSemiMgmtModal = false">
-        <div class="modal-box" style="max-width: 720px;">
+        <div class="modal-box" style="max-width: 960px;">
             <div class="modal-header">
                 <h3><i class="fas fa-industry" style="color: var(--accent);"></i> 반제품 관리</h3>
                 <button type="button" class="btn btn-ghost" @click="showSemiMgmtModal = false">✕</button>
@@ -820,22 +822,85 @@
                     <div class="card-body">
                         <div class="form-grid" style="grid-template-columns: repeat(2, 1fr);">
                             <div class="info-cell" style="grid-column: 1 / -1;"><div class="lbl">B2 (반제품 명 / 반제품 관리대장)</div><div class="val" style="white-space: pre-wrap;">{{ semiMgmtPreview.B2 || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">단위 (M7)</div><div class="val">{{ semiMgmtPreview.M7 || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">약어</div><div class="val" style="font-weight:700; color:var(--accent);">{{ semiMgmtPreview.division }}</div></div>
                             <div class="info-cell"><div class="lbl">제조지침서 No.</div><div class="val">{{ semiMgmtPreview.instructionNo }}</div></div>
                             <div class="info-cell"><div class="lbl">지시 Lot (H6)</div><div class="val" style="font-family: monospace;">{{ semiMgmtPreview.H6 || '—' }}</div></div>
                             <div class="info-cell"><div class="lbl">지시 제조일자 (X6)</div><div class="val">{{ semiMgmtPreview.X6 || '—' }}</div></div>
                             <div class="info-cell"><div class="lbl">사용량 (H7)</div><div class="val" style="font-weight:700;">{{ semiMgmtPreview.H7 || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">유효기간 (X7)</div><div class="val">{{ semiMgmtPreview.X7 || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">보관온도 (H8)</div><div class="val">{{ semiMgmtPreview.H8 || '—' }}</div></div>
-                            <div class="info-cell"><div class="lbl">냉장고 (H9)</div><div class="val">{{ semiMgmtPreview.H9 || '—' }}</div></div>
                         </div>
                     </div>
                 </div>
+                <div v-if="semiMgmtPreview.bufferSemiProduct" class="table-container" style="margin-top: 18px;">
+                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #854D02;">
+                        <i class="fas fa-flask"></i> 버퍼 Lot 사용 이력 (DB level2 · Lot No. = {{ semiMgmtPreview.N7 || '—' }})
+                    </h5>
+                    <p v-if="semiMgmtPreview.bufferLedgerInitialStock != null && semiMgmtPreview.bufferLedgerInitialStock !== ''" style="margin: 0 0 8px 0; font-size: 0.82rem; color: var(--text-muted);">
+                        기준 재고(제조량): <strong>{{ semiMgmtPreview.bufferLedgerInitialStock }}</strong>
+                        <span v-if="!semiMgmtPreview.bufferUsageLedger || semiMgmtPreview.bufferUsageLedger.length === 0"> — 해당 Lot의 level2 사용 행이 없습니다.</span>
+                    </p>
+                    <table v-if="semiMgmtPreview.bufferUsageLedger && semiMgmtPreview.bufferUsageLedger.length" style="font-size: 0.85rem; width: 100%;">
+                        <thead>
+                            <tr style="background: #FFFBEB;">
+                                <th>사용 일자</th>
+                                <th>사용 목적 (상위 Lot)</th>
+                                <th style="text-align:right;">사용량</th>
+                                <th style="text-align:right;">재고량</th>
+                                <th>단위</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, bi) in semiMgmtPreview.bufferUsageLedger" :key="'buf-use-' + bi + '-' + row.usage_purpose">
+                                <td>{{ row.usage_date || '—' }}</td>
+                                <td style="font-family: monospace; font-weight: 600;">{{ row.usage_purpose || '—' }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row.usage_amount }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row.inventory_after }}</td>
+                                <td>{{ row.unit || semiMgmtPreview.M7 || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-if="!semiMgmtPreview.bufferSemiProduct && semiMgmtPreview.nonBufferLevel1" class="table-container" style="margin-top: 18px;">
+                    <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: var(--accent);">
+                        <i class="fas fa-layer-group"></i> 반제품 Lot 사용 이력 (DB level1 · Lot No. = {{ semiMgmtPreview.N7 || '—' }})
+                    </h5>
+                    <p v-if="semiMgmtPreview.nonBufferLedgerInitialStock != null && semiMgmtPreview.nonBufferLedgerInitialStock !== ''" style="margin: 0 0 8px 0; font-size: 0.82rem; color: var(--text-muted);">
+                        기준 재고(제조수량): <strong>{{ semiMgmtPreview.nonBufferLedgerInitialStock }}</strong>
+                        <span v-if="!semiMgmtPreview.nonBufferLevel1LedgerRows || semiMgmtPreview.nonBufferLevel1LedgerRows.length === 0"> — 해당 Lot의 level1 추가 행이 없습니다.</span>
+                    </p>
+                    <table style="font-size: 0.85rem; width: 100%;">
+                        <thead>
+                            <tr style="background: #FFFBEB;">
+                                <th>사용 일자</th>
+                                <th>사용 목적</th>
+                                <th style="text-align:right;">사용량</th>
+                                <th style="text-align:right;">재고량</th>
+                                <th>단위</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="min-width: 140px;">
+                                    <input type="text" v-model="semiMgmtPerfTestDate" placeholder="YYYY-MM-DD" style="width: 100%; max-width: 160px; padding: 6px 8px; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 6px;" />
+                                </td>
+                                <td style="font-weight: 600; font-family: monospace;">{{ semiMgmtPreview.nonBufferLevel1.parent_lot || '—' }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ semiMgmtPreview.nonBufferPerformanceTestUsage != null ? semiMgmtPreview.nonBufferPerformanceTestUsage : '—' }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ semiMgmtPreview.nonBufferInventoryAfterPerfTest != null ? semiMgmtPreview.nonBufferInventoryAfterPerfTest : '—' }}</td>
+                                <td>{{ semiMgmtPreview.nonBufferLevel1.unit || '—' }}</td>
+                            </tr>
+                            <tr v-for="(row, ni) in (semiMgmtPreview.nonBufferLevel1LedgerRows || [])" :key="'nb-l1-' + ni + '-' + (row.usage_date || '')">
+                                <td>{{ row.usage_date || '—' }}</td>
+                                <td style="font-weight: 600; font-family: monospace;">{{ row.usage_purpose || semiMgmtPreview.nonBufferLevel1.parent_lot || '—' }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row.usage_amount }}</td>
+                                <td style="text-align:right; font-weight:600;">{{ row.inventory_after }}</td>
+                                <td>{{ row.unit || semiMgmtPreview.nonBufferLevel1.unit || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border);">
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--border);">
                 <button type="button" class="btn btn-outline" @click="showSemiMgmtModal = false">취소</button>
-                <button type="button" class="btn btn-success" @click="downloadSemiProductManagementFile"><i class="fas fa-file-excel"></i> 엑셀 다운로드</button>
+                <button type="button" class="btn btn-outline" @click="downloadSemiProductManagementFile(false)"><i class="fas fa-file-excel"></i> 엑셀 (사용이력 없음)</button>
+                <button type="button" class="btn btn-success" @click="downloadSemiProductManagementFile(true)"><i class="fas fa-file-excel"></i> 엑셀 (사용이력 포함)</button>
             </div>
         </div>
     </div>

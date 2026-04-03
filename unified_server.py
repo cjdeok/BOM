@@ -357,6 +357,61 @@ def _semi_mgmt_clear_range_b12_ad30(ws):
             _write_cell_safe(ws, f'{get_column_letter(col)}{row}', None)
 
 
+def _semi_mgmt_write_usage_history(ws, preview, perf_test_date):
+    """
+    사용이력 12행부터: B=사용일자, H=사용목적, R=사용량, V=재고량, T·X=단위(동일 값).
+    버퍼: level2 사용 이력 행만. 비버퍼: 성능검사 1행(목적=상위 Lot) + level1 이력 행.
+    """
+    row = 12
+    max_row = 30
+
+    def _write_row(date_v, purpose_v, amt_v, inv_v, unit_v):
+        nonlocal row
+        if row > max_row:
+            return
+        _write_cell_safe(ws, f'B{row}', date_v)
+        _write_cell_safe(ws, f'H{row}', purpose_v)
+        _write_cell_safe(ws, f'R{row}', amt_v)
+        _write_cell_safe(ws, f'V{row}', inv_v)
+        u = unit_v if unit_v is not None and str(unit_v).strip() != '' else None
+        _write_cell_safe(ws, f'T{row}', u)
+        _write_cell_safe(ws, f'X{row}', u)
+        row += 1
+
+    if preview.get('bufferSemiProduct'):
+        unit_fallback = preview.get('M7') or ''
+        for item in preview.get('bufferUsageLedger') or []:
+            _write_row(
+                item.get('usage_date'),
+                item.get('usage_purpose'),
+                item.get('usage_amount'),
+                item.get('inventory_after'),
+                item.get('unit') or unit_fallback,
+            )
+        return
+
+    nb = preview.get('nonBufferLevel1')
+    if not nb:
+        return
+    parent_lot_disp = str(nb.get('parent_lot') or '').strip()
+    _write_row(
+        (perf_test_date or '').strip() or None,
+        parent_lot_disp or None,
+        preview.get('nonBufferPerformanceTestUsage'),
+        preview.get('nonBufferInventoryAfterPerfTest'),
+        nb.get('unit') or preview.get('M7') or '',
+    )
+    ufb = nb.get('unit') or preview.get('M7') or ''
+    for item in preview.get('nonBufferLevel1LedgerRows') or []:
+        _write_row(
+            item.get('usage_date'),
+            item.get('usage_purpose'),
+            item.get('usage_amount'),
+            item.get('inventory_after'),
+            item.get('unit') or ufb,
+        )
+
+
 def _semi_mgmt_h9_fridge(division_or_code):
     """H9: 약어/코드에 따른 냉장고 자산번호."""
     d = re.sub(r'\s+', '', str(division_or_code or '').strip().upper())
@@ -395,6 +450,150 @@ def _split_lot_tokens(s):
     if s is None or str(s).strip() == '':
         return []
     return [x.strip() for x in re.split(r'[\n,;]+', str(s)) if x.strip()]
+
+
+def _is_buffer_semi_division_or_code(division, code_i7):
+    """PB·CB·WB 버퍼류 반제품(약어/코드번호)."""
+    for s in (division, code_i7):
+        d = re.sub(r'\s+', '', str(s or '').strip().upper())
+        if d.startswith('PB') or d.startswith('CB') or d.startswith('WB'):
+            return True
+    return False
+
+
+def _level0_production_qty_string(l0):
+    """제조기록서(비버퍼)와 동일: 생산 수량(kit) 우선, 없으면 targetQty."""
+    if not l0:
+        return ''
+    kit = l0.get('생산 수량(kit)')
+    if kit is not None and str(kit).strip() != '':
+        return str(kit).strip()
+    alt = l0.get('targetQty')
+    if alt is not None and str(alt).strip() != '':
+        return str(alt).strip()
+    return ''
+
+
+def _level0_production_qty_float(l0):
+    """level0 제조수량 숫자."""
+    s = _level0_production_qty_string(l0)
+    if not s:
+        return 0.0
+    try:
+        return float(str(s).replace(',', ''))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _non_buffer_level1_ledger_rows(cursor, parent_lot, lot_tokens, stock_after_perf_test):
+    """
+    성능검사 반영 후 재고(stock_after_perf_test)에서 시작해,
+    동일 상위Lot·반제품 Lot의 level1 행(포장시 요구량)을 순서대로 차감한 사용 이력 행.
+    """
+    if not parent_lot or not lot_tokens:
+        return []
+
+    def _to_float_local(v):
+        try:
+            return float(str(v or 0).replace(',', ''))
+        except (ValueError, TypeError):
+            return 0.0
+
+    placeholders = ','.join(['?' for _ in lot_tokens])
+    cursor.execute(
+        f'''
+        SELECT "상위Lot", "제조일자", "유효기간", "구성품 명칭", "코드번호", "포장시 요구량", "단위", "Lot No."
+        FROM level1
+        WHERE "상위Lot" = ? AND TRIM("Lot No.") IN ({placeholders})
+        ORDER BY COALESCE("제조일자", ''), COALESCE("Lot No.", '')
+        ''',
+        [parent_lot.strip()] + list(lot_tokens),
+    )
+    out = []
+    running = float(stock_after_perf_test) if stock_after_perf_test is not None else 0.0
+    pl = (parent_lot or '').strip()
+    for r in cursor.fetchall():
+        d = dict(r)
+        qty = _to_float_local(d.get('포장시 요구량'))
+        purpose = str(d.get('상위Lot') or '').strip() or pl
+        udate = d.get('제조일자') or d.get('유효기간')
+        unit = str(d.get('단위') or '').strip()
+        running_after = running - qty
+        out.append({
+            'usage_date': _fmt_date_yyyy_mm_dd(udate),
+            'usage_purpose': purpose,
+            'usage_amount': qty,
+            'inventory_after': running_after,
+            'unit': unit,
+        })
+        running = running_after
+    return out
+
+
+def _level2_usage_row_sort_key(parent_lot_val):
+    """상위Lot 접미(예: …-04R4 → 4)로 사용 순서 추정. 동일 시 문자열로 안정 정렬."""
+    s = str(parent_lot_val or '').strip()
+    segs = s.split('-')
+    if segs:
+        last = segs[-1]
+        m = re.match(r'^(\d+)', last)
+        if m:
+            try:
+                return (0, int(m.group(1)), s)
+            except ValueError:
+                pass
+    return (1, 0, s)
+
+
+def _buffer_usage_ledger_from_level2(cursor, lot_tokens, initial_stock, default_unit):
+    """
+    level2에서 이 버퍼 Lot이 원재료 Lot No.로 할당된 행 = 타 반제품(상위Lot)이 사용한 기록.
+    제조량=사용량, 상위Lot=사용 목적(사용처 Lot), 재고량은 제조량 기준 누적 차감.
+    """
+    if not lot_tokens:
+        return []
+    def _to_float(v):
+        try:
+            return float(str(v or 0).replace(',', ''))
+        except (ValueError, TypeError):
+            return 0.0
+
+    placeholders = ','.join(['?' for _ in lot_tokens])
+    cursor.execute(
+        f'''
+        SELECT "상위Lot", "제조량", "단위", "원재료명", "코드번호", "제조일자", "유효기간"
+        FROM level2
+        WHERE TRIM("Lot No.") IN ({placeholders})
+        AND (
+            INSTR(LOWER(COALESCE("원재료명", '')), 'buffer') > 0
+            OR UPPER(COALESCE("코드번호", '')) LIKE 'PB%'
+            OR UPPER(COALESCE("코드번호", '')) LIKE 'CB%'
+            OR UPPER(COALESCE("코드번호", '')) LIKE 'WB%'
+        )
+        ''',
+        lot_tokens,
+    )
+    rows = sorted(cursor.fetchall(), key=lambda r: (
+        str(r['제조일자'] or ''),
+        _level2_usage_row_sort_key(r['상위Lot']),
+    ))
+    out = []
+    running = float(initial_stock) if initial_stock is not None else 0.0
+    for r in rows:
+        d = dict(r)
+        used = _to_float(d.get('제조량'))
+        unit = str(d.get('단위') or default_unit or '').strip()
+        running_after = running - used
+        udate = d.get('제조일자') or d.get('유효기간')
+        out.append({
+            'usage_date': _fmt_date_yyyy_mm_dd(udate),
+            'usage_purpose': str(d.get('상위Lot') or '').strip(),
+            'usage_amount': used,
+            'inventory_after': running_after,
+            'unit': unit,
+        })
+        running = running_after
+    return out
 
 
 def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, division):
@@ -512,12 +711,16 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
         div_out = str(l1.get('코드번호') or '')
 
     b2 = _semi_mgmt_b2_cell_text(cursor, a7, i7)
-    # H6·X6·H7: instruction_summary만 (L1·N7·I9 폴백 없음)
+    # H6·X6: instruction_summary. H7: 버퍼류는 지시 생산량, 비버퍼는 제조기록서와 동일하게 level0 제조수량
     h6 = x6 = h7 = ''
     if summ:
         h6 = str(summ.get('Lot. No.') or '').strip()
         x6 = _fmt_date_yyyy_mm_dd(summ.get('제조일자'))
         h7 = str(summ.get('생산량') or '').strip()
+    if not _is_buffer_semi_division_or_code(div_out, i7):
+        l0_qty = _level0_production_qty_string(l0)
+        if l0_qty:
+            h7 = l0_qty
     mfg_for_x7 = None
     if summ and summ.get('제조일자'):
         mfg_for_x7 = summ.get('제조일자')
@@ -531,6 +734,51 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
     h8 = '2 ~ 8℃'
     h9 = _semi_mgmt_h9_fridge(div_out or i7)
     m7 = _item_master_unit(cursor, i7)
+
+    buffer_semi = _is_buffer_semi_division_or_code(div_out, i7)
+    buffer_ledger = []
+    buffer_ledger_initial = float(i9) if i9 else 0.0
+    if buffer_semi and buffer_ledger_initial == 0.0 and h7:
+        mqty = re.search(r'[\d,.]+', str(h7))
+        if mqty:
+            try:
+                buffer_ledger_initial = float(mqty.group(0).replace(',', ''))
+            except ValueError:
+                buffer_ledger_initial = 0.0
+    if buffer_semi:
+        n7_tokens = _split_lot_tokens(n7) or ([n7.strip()] if str(n7).strip() else [])
+        buffer_ledger = _buffer_usage_ledger_from_level2(
+            cursor, n7_tokens, buffer_ledger_initial, m7
+        )
+
+    nb_l1_info = None
+    nb_perf_usage = None
+    nb_inv_after_perf = None
+    nb_l1_ledger = []
+    nb_ledger_initial = None
+    if not buffer_semi and l1:
+        l0f = _level0_production_qty_float(l0)
+        l1pkg = float(i9) if i9 else 0.0
+        nb_perf_usage = l0f - l1pkg
+        nb_inv_after_perf = l0f - nb_perf_usage
+        nb_ledger_initial = l0f
+        nb_l1_info = {
+            'parent_lot': str(l1.get('상위Lot') or ''),
+            'lot_no': str(l1.get('Lot No.') or n7 or ''),
+            'code': str(l1.get('코드번호') or i7 or ''),
+            'name': str(l1.get('구성품 명칭') or a7 or ''),
+            'pack_qty': l1pkg,
+            'unit': str((l1.get('단위') or '') or m7 or '').strip(),
+            'mfg_date': _fmt_date_yyyy_mm_dd(l1.get('제조일자')),
+            'expiry': _fmt_date_yyyy_mm_dd(l1.get('유효기간')),
+            'level0_qty': l0f,
+        }
+        n7_tok_nb = _split_lot_tokens(n7) or ([str(n7).strip()] if str(n7).strip() else [])
+        pl_nb = (parent_lot or '').strip()
+        if pl_nb and n7_tok_nb and nb_inv_after_perf is not None:
+            nb_l1_ledger = _non_buffer_level1_ledger_rows(
+                cursor, pl_nb, n7_tok_nb, nb_inv_after_perf
+            )
 
     preview = {
         'A7': a7,
@@ -555,6 +803,14 @@ def _build_semi_product_management_preview(cursor, parent_lot, semi_lot_raw, div
         'mfgDate': t7,
         'expiry': x7,
         'qty': i9,
+        'bufferSemiProduct': buffer_semi,
+        'bufferUsageLedger': buffer_ledger,
+        'bufferLedgerInitialStock': buffer_ledger_initial,
+        'nonBufferLevel1': nb_l1_info,
+        'nonBufferPerformanceTestUsage': nb_perf_usage,
+        'nonBufferInventoryAfterPerfTest': nb_inv_after_perf,
+        'nonBufferLevel1LedgerRows': nb_l1_ledger,
+        'nonBufferLedgerInitialStock': nb_ledger_initial,
     }
     return preview, None
 
@@ -581,6 +837,9 @@ def semi_product_management_download():
     parent_lot = request.args.get('parent_lot', '')
     semi_lot = request.args.get('semi_lot', '')
     division = request.args.get('division', '')
+    include_raw = (request.args.get('include_usage_history') or '').strip().lower()
+    include_usage = include_raw in ('1', 'true', 'yes', 'y')
+    perf_test_date = (request.args.get('perf_test_date') or '').strip()
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -600,8 +859,11 @@ def semi_product_management_download():
         _write_cell_safe(ws, 'X7', preview.get('X7') or '')
         _write_cell_safe(ws, 'H8', preview.get('H8') or '')
         _write_cell_safe(ws, 'H9', preview.get('H9') or '')
+        if include_usage:
+            _semi_mgmt_write_usage_history(ws, preview, perf_test_date)
 
         safe_name = re.sub(r'[^\w\-]+', '_', str(preview.get('N7') or 'semi'))[:80]
+        suffix = '_usage_history' if include_usage else '_no_usage_history'
         tmp_fd, tmp_name = tempfile.mkstemp(suffix='.xlsx')
         os.close(tmp_fd)
         wb.save(tmp_name)
@@ -609,7 +871,7 @@ def semi_product_management_download():
         return send_file(
             tmp_name,
             as_attachment=True,
-            download_name=f'Semi_Product_Management_{safe_name}.xlsx',
+            download_name=f'Semi_Product_Management_{safe_name}{suffix}.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
     except Exception as e:
