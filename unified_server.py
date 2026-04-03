@@ -1177,57 +1177,42 @@ def _qmpc_parse_revision_cell(v) -> int | None:
     return None
 
 
-def _qmpc_revision_latest_from_grid(headers: list, rows: list) -> tuple[int | None, str | None]:
-    """개정 이력 표에서 최대 개정 번호와 그 행의 제/개정 일자."""
-    if not headers or not rows:
-        return None, None
-    h = [(x or "").replace("\n", " ").strip() for x in headers]
-    rev_i = None
-    date_i = None
-    for i, cell in enumerate(h):
-        c = (cell or "").replace(" ", "")
-        if "개정" in c and ("no" in c.lower() or "번호" in c):
-            rev_i = i
-        if "일자" in (cell or "") or "제/개정" in (cell or ""):
-            date_i = i
-    if rev_i is None:
-        rev_i = 0
-    if date_i is None:
-        for i, cell in enumerate(h):
-            if "일자" in (cell or ""):
-                date_i = i
-                break
-        if date_i is None and len(h) > 1:
-            date_i = 1
-    best_rev = -1
-    best_date: str | None = None
+def _qmpc_revision_latest_from_grid(headers: list, rows: list) -> tuple[int | None, str | None, str | None]:
+    """
+    개정 이력 표에서 C열(인덱스2)에 값이 있는 마지막 행을 기준으로
+    - 개정 No: B열(인덱스1)
+    - 제/개정 일자: C열(인덱스2)
+    - 제/개정 내용: E열(인덱스4)
+    을 반환한다.
+    """
+    if not rows:
+        return None, None, None
+    # C열(인덱스2) 에 값이 있는 행 중 마지막 행을 선택
+    last_valid_row = None
     for row in rows:
-        if not row or rev_i >= len(row):
-            continue
-        rv = _qmpc_parse_revision_cell(row[rev_i])
-        if rv is None:
-            continue
-        ds = row[date_i] if date_i is not None and date_i < len(row) else ""
-        dt = _flexible_qmpc_date_to_iso(ds)
-        if rv > best_rev:
-            best_rev = rv
-            best_date = dt
-        elif rv == best_rev and dt is not None:
-            best_date = dt
-    if best_rev < 0:
-        return None, None
-    return best_rev, best_date
+        if len(row) > 2 and (row[2] or "").strip():
+            last_valid_row = row
+    if last_valid_row is None:
+        return None, None, None
+    rev_val = last_valid_row[1] if len(last_valid_row) > 1 else None
+    date_val = last_valid_row[2] if len(last_valid_row) > 2 else None
+    content_val = last_valid_row[4] if len(last_valid_row) > 4 else None
+    rev_no = _qmpc_parse_revision_cell(rev_val)
+    rev_date = _flexible_qmpc_date_to_iso(date_val)
+    rev_content = (str(content_val).strip() if content_val else None) or None
+    return rev_no, rev_date, rev_content
 
 
 def _qmpc_meta_from_xlsx(path: str) -> dict:
     """
-    공정도 xlsx: 표지 등에서 문서번호(ESH-PC-…), 개정 이력 시트(Sheet1 우선)에서 최신 제/개정일·개정번호.
-    제/개정일은 NAS 파일 수정일과 무관하게 표 데이터만 사용.
+    공정도 xlsx: 표지 등에서 문서번호(ESH-PC-…), 개정 이력 시트(두 번째 시트 '표지(2)' 우선)에서
+    C열 기준 마지막 유효행의 B열=개정No, C열=제/개정일, E열=제/개정내용을 추출.
     """
     out: dict = {
         "document_number": None,
         "latest_revision_date": None,
         "latest_revision_no": None,
+        "latest_revision_content": None,
         "sheet_revision_name": None,
     }
     if not path or not os.path.isfile(path):
@@ -1261,9 +1246,16 @@ def _qmpc_meta_from_xlsx(path: str) -> dict:
         if not raw_rows:
             return out
         hdr, body = _qmpc_headers_and_body_from_raw(raw_rows)
-        rev_no, rev_date = _qmpc_revision_latest_from_grid(hdr, body)
+        rev_no, rev_date, rev_content = _qmpc_revision_latest_from_grid(hdr, body)
+        try:
+            with open("server_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"[DEBUG_META] path={path}\n")
+                f.write(f"  sn={sn} raw_rows={len(raw_rows)}\n")
+                f.write(f"  rev_no={rev_no} rev_date={rev_date} content_len={len(rev_content or '')}\n")
+        except: pass
         out["latest_revision_no"] = rev_no
         out["latest_revision_date"] = rev_date
+        out["latest_revision_content"] = rev_content
         return out
     finally:
         if wb is not None:
@@ -1874,7 +1866,7 @@ def _build_qmpc_catalog_rows(
     """품질관리 공정도: 모델당 1행. 문서번호는 엑셀 표지 ESH-PC-… 우선, 없으면 파일명 '_' 앞 접두."""
     r_folder_label = f"R{r_num}" if r_num is not None else "—"
     fallback_doc_num = f"{model_code} / {r_folder_label}" if r_num is not None else model_code
-    title = "품질관리 공정도"
+    title = "품질관리 공정도 [DEBUG]"
     meta = qmpc_meta or {}
     if not all_docs:
         return [
@@ -1883,6 +1875,7 @@ def _build_qmpc_catalog_rows(
                 "document_number": fallback_doc_num,
                 "document_title": title,
                 "issue_revision_date": None,
+                "issue_revision_content": None,
                 "version": r_folder_label,
                 "matched_filename": None,
             }
@@ -1900,22 +1893,29 @@ def _build_qmpc_catalog_rows(
         doc_num = f"{excel_doc}-R{rev_no}"
     rev_from_excel = f"R{rev_no}" if rev_no is not None else None
     version_label = rev_from_excel or r_folder_label
-    # 제/개정일은 엑셀 개정 이력 표만 사용 (파일 수정 시각 사용 안 함)
+    # 제/개정일·개정내용은 엑셀 개정 이력 표만 사용 (파일 수정 시각 사용 안 함)
     idate = meta.get("latest_revision_date")
+    icontent = meta.get("latest_revision_content")
     return [
         {
             "model_name": model_code,
             "document_number": doc_num,
             "document_title": title,
             "issue_revision_date": idate,
+            "issue_revision_content": icontent,
             "version": version_label,
             "matched_filename": best["filename"],
         }
     ]
 
 
+# QMPC 전용 모델 목록 (BCE04는 현재 파일 없음)
+_QMPC_SUBFOLDERS = ("BCE01", "BCE02", "BCE03", "BCE04", "BCEPP")
+_QMPC_NO_FILE_MODELS = frozenset({"BCE04"})
+
+
 def _instruction_qmpc_latest_payload(roots: list, env_hint_name: str) -> dict:
-    """품질관리 공정도: BCE01 하위 또는 공정도 루트의 R*/평면 xlsx에서 모델명 매칭."""
+    """품질관리 공정도: BCE01~BCEPP 모델 xlsx에서 개정 이력 추출. BCE04는 파일없음 표기."""
     out = {
         "base": roots[0] if roots else "",
         "roots_tried": roots,
@@ -1923,7 +1923,26 @@ def _instruction_qmpc_latest_payload(roots: list, env_hint_name: str) -> dict:
         "layout": "qmpc_model_r_latest_xlsx",
     }
     hint = _instruction_nas_hint(env_hint_name)
-    for sub in MANUFACTURING_INSTRUCTION_SUBFOLDERS:
+    for sub in _QMPC_SUBFOLDERS:
+        # BCE04처럼 파일이 없는 모델은 즉시 '파일없음' 처리
+        if sub in _QMPC_NO_FILE_MODELS:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": "no_file",
+                "message": "파일없음",
+                "catalog_rows": [
+                    {
+                        "model_name": sub,
+                        "document_number": "—",
+                        "document_title": "품질관리 공정도",
+                        "issue_revision_date": None,
+                        "issue_revision_content": None,
+                        "version": "—",
+                        "matched_filename": None,
+                    }
+                ],
+            }
+            continue
         col = _qmpc_collect_for_model(sub, roots)
         if not col.get("ok"):
             out["folders"][sub] = {
