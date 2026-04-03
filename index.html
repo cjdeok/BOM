@@ -446,6 +446,7 @@
                                             <th style="width: 64px; text-align: center; padding: 6px 6px;">모델명</th>
                                             <th style="min-width: 160px; padding: 6px 6px;">문서번호</th>
                                             <th style="min-width: 180px; padding: 6px 6px;">문서명</th>
+                                            <th style="width: 92px; text-align: center; white-space: nowrap; padding: 6px 4px;">제/개정일</th>
                                             <th style="width: 44px; text-align: center; padding: 6px 4px;">버전</th>
                                         </tr>
                                     </thead>
@@ -455,6 +456,7 @@
                                             <td style="text-align: center; font-weight: 700; color: var(--text-main); padding: 4px 6px; vertical-align: top;">{{ row.model_name }}</td>
                                             <td style="word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.72rem; padding: 4px 6px; vertical-align: top;">{{ row.document_number }}</td>
                                             <td :title="row.matched_filename || ''" style="padding: 4px 6px; vertical-align: top; line-height: 1.35;">{{ row.document_title }}</td>
+                                            <td style="text-align: center; white-space: nowrap; padding: 4px 4px; vertical-align: top; font-size: 0.72rem;">{{ row.issue_revision_date || '—' }}</td>
                                             <td style="text-align: center; font-weight: 700; padding: 4px 4px; vertical-align: top;">{{ row.version }}</td>
                                         </tr>
                                     </tbody>

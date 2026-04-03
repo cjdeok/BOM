@@ -12,6 +12,8 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
 import tempfile
 import urllib.parse
+import zipfile
+import xml.etree.ElementTree as ET
 
 app = Flask(__name__, static_folder='.')
 
@@ -95,10 +97,367 @@ def _doc_modified_timestamp(doc: dict) -> float:
         return 0.0
 
 
+_W_MAIN_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+# Issued Date / I+ssued run 분리, 콜론 일반·전각
+_ISSUED_DATE_RE = re.compile(
+    r"(?:Issued|ssued|Issue)\s*Date\s*[:\uFF1A]\s*(\d{4})[\.\-/](\d{1,2})[\.\-/](\d{1,2})",
+    re.I,
+)
+# 보조: 날짜 직후 Rev (점 유무·개정번호는 별 run)
+_ISSUED_BEFORE_REV_RE = re.compile(
+    r"(?<![0-9])(\d{4})[\.\-/](\d{1,2})[\.\-/](\d{1,2})\s*Rev\.?\s*\d",
+    re.I,
+)
+# 한글 머리/바닥글 (년·월·일 사이 공백 허용)
+_ISSUED_KO_RE = re.compile(
+    r"(?:발행일|개정일|제\s*개정일)\s*[:\uFF1A]?\s*"
+    r"(\d{4})\s*[\.\-/년]\s*(\d{1,2})\s*[\.\-/월]\s*(\d{1,2})(?:\s*일)?",
+    re.I,
+)
+_PLAIN_DATE_RE = re.compile(r"(?<![0-9])(20\d{2})[\.\-/](\d{1,2})[\.\-/](\d{1,2})(?![0-9])")
+# 문서 개정 이력 표의 날짜 셀 (YYYY.MM.DD 등)
+_REVISION_TBL_DATE = re.compile(
+    r"(?<![0-9])(\d{4})\s*[\.\-/]\s*(\d{1,2})\s*[\.\-/]\s*(\d{1,2})(?![0-9])"
+)
+
+
+def _ooxml_local_tag_suffix(tag: str) -> str:
+    if not tag:
+        return ""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _ooxml_collect_text_doc_order(
+    xml_bytes: bytes, max_paragraphs: int | None = None
+) -> str:
+    """
+    w:p 단위로 w:t / instrText / delText 를 모은 뒤 단락 사이에 공백을 넣어 이음.
+    (단락 경계 없이 이어붙이면 Issued / Date 가 한 줄로 안 잡히는 경우가 있음)
+    네임스페이스 URI가 달라도 로컬 태그명이 t/instrText/delText 이면 수집.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return ""
+    W = _W_MAIN_NS
+    p_tag = f"{{{W}}}p"
+    paras: list[str] = []
+    for p_el in root.iter(p_tag):
+        chunks: list[str] = []
+        for el in p_el.iter():
+            suf = _ooxml_local_tag_suffix(el.tag)
+            if suf not in ("t", "instrText", "delText"):
+                continue
+            if el.text:
+                chunks.append(el.text)
+        if chunks:
+            paras.append("".join(chunks))
+        if max_paragraphs is not None and len(paras) >= max_paragraphs:
+            break
+    joined = " ".join(paras)
+    if joined.strip():
+        return joined
+    # 비정형(단락 밖 run 등): 전체 트리 순회 폴백
+    return "".join(
+        (el.text or "")
+        for el in root.iter()
+        if _ooxml_local_tag_suffix(el.tag) in ("t", "instrText", "delText")
+    )
+
+
+def _fmt_yyyy_mm_dd(y: str, mo: str, d: str) -> str:
+    return f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
+
+
+def _yyyy_mm_dd_sort_key(s: str) -> tuple[int, int, int]:
+    """YYYY-MM-DD 문자열 비교용 (여러 개정 이력 표 중 최신일 선택)."""
+    try:
+        parts = s.split("-")
+        if len(parts) != 3:
+            return (0, 0, 0)
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    except (ValueError, TypeError):
+        return (0, 0, 0)
+
+
+_OOXML_HDR_TAIL_RE = re.compile(
+    r"^(?:(?:even|odd|first)header|header)(\d+)\.xml$",
+    re.I,
+)
+_OOXML_FTR_TAIL_RE = re.compile(
+    r"^(?:(?:even|odd|first)footer|footer)(\d+)\.xml$",
+    re.I,
+)
+
+
+def _issued_part_sort_key(part_name: str) -> tuple[int, int]:
+    """
+    동일 정규식 우선순위일 때: 머리글 > 바닥글 > 기타 > 본문(document.xml),
+    머리글은 번호가 큰 쪽(header4 > header1).
+    """
+    tail = part_name.rsplit("/", 1)[-1]
+    if tail.lower() == "document.xml":
+        return (4, 0)
+    m = _OOXML_HDR_TAIL_RE.match(tail)
+    if m:
+        return (0, int(m.group(1)))
+    m = _OOXML_FTR_TAIL_RE.match(tail)
+    if m:
+        return (1, int(m.group(1)))
+    if re.match(r"^(endnotes|footnotes)\d*\.xml$", tail, re.I):
+        return (2, 0)
+    return (3, 0)
+
+
+def _match_issued_date_with_priority(blob: str):
+    """(정규식 우선순위 0=가장 엄격, match) 또는 None."""
+    if not blob:
+        return None
+    b = _normalize_text_for_issued_date(blob)
+    for prio, rx in enumerate(
+        (_ISSUED_DATE_RE, _ISSUED_KO_RE, _ISSUED_BEFORE_REV_RE)
+    ):
+        m = rx.search(b)
+        if m:
+            return (prio, m)
+    low = b.lower()
+    for key in ("issued", "ssued"):
+        pos = low.find(key)
+        if pos >= 0:
+            window = b[pos : pos + 140]
+            m = _PLAIN_DATE_RE.search(window)
+            if m:
+                return (3, m)
+    return None
+
+
+def _match_issued_date_in_blob(blob: str):
+    """blob에서 첫 매칭 (m, groups y,mo,d) 또는 None."""
+    r = _match_issued_date_with_priority(blob)
+    return r[1] if r else None
+
+
+def _docx_xml_names_for_issued(zf: zipfile.ZipFile) -> list:
+    """머리글·바닥글·각주·미주 (document.xml 제외). even/first 머리글 포함."""
+    out = []
+    for n in sorted(zf.namelist()):
+        if not n.endswith(".xml") or not n.startswith("word/"):
+            continue
+        tail = n[5:]
+        if tail.startswith(("header", "footer", "endnotes", "footnotes")):
+            out.append(n)
+            continue
+        if _OOXML_HDR_TAIL_RE.match(tail) or _OOXML_FTR_TAIL_RE.match(tail):
+            out.append(n)
+    return out
+
+
+def _ooxml_collect_w_t_text(xml_bytes: bytes) -> str:
+    """호환용: w:t 만 (내부적으로 확장 수집 권장)."""
+    return _ooxml_collect_text_doc_order(xml_bytes)
+
+
+def _normalize_text_for_issued_date(blob: str) -> str:
+    """NBSP·전각 공백 등을 일반 공백으로."""
+    if not blob:
+        return ""
+    t = blob.replace("\xa0", " ").replace("\u3000", " ")
+    t = t.replace("\uFF1A", ":")
+    return t
+
+
+def _ooxml_direct_children_by_suffix(parent: ET.Element, suffix: str) -> list:
+    return [ch for ch in parent if _ooxml_local_tag_suffix(ch.tag) == suffix]
+
+
+def _ooxml_tc_plain_text(tc: ET.Element) -> str:
+    """표 셀 내부 w:t·필드 텍스트를 run 순서대로 이음 (날짜가 run으로 쪼개진 경우 대비)."""
+    parts: list[str] = []
+    for el in tc.iter():
+        if _ooxml_local_tag_suffix(el.tag) in ("t", "instrText", "delText") and el.text:
+            parts.append(el.text)
+    return "".join(parts)
+
+
+def _revision_history_date_col_label(compact: str) -> bool:
+    """헤더 셀: 제/개정 일자 열인지 (공백 제거·슬래시 정규화 후)."""
+    c = re.sub(r"\s+", "", compact)
+    c = c.replace("／", "/")
+    if "제/개정일자" in c or "제개정일자" in c:
+        return True
+    return "개정" in c and "일자" in c and ("제" in c or "/" in c)
+
+
+def _revision_table_last_date(tbl: ET.Element) -> str | None:
+    """
+    단일 w:tbl에서 '제/개정 일자' 열을 찾고, 개정 No. 열이 숫자인 데이터 행만 스캔해
+    마지막 유효 날짜(YYYY-MM-DD)를 반환.
+    """
+    rows = _ooxml_direct_children_by_suffix(tbl, "tr")
+    date_col_idx: int | None = None
+    for tr in rows:
+        cells_raw = [
+            _ooxml_tc_plain_text(tc) for tc in _ooxml_direct_children_by_suffix(tr, "tc")
+        ]
+        cells = [_normalize_text_for_issued_date(x) for x in cells_raw]
+        for ci, ct in enumerate(cells):
+            if _revision_history_date_col_label(ct):
+                date_col_idx = ci
+                break
+        if date_col_idx is not None:
+            break
+    if date_col_idx is None:
+        return None
+    last_m = None
+    for tr in rows:
+        cells_raw = [
+            _ooxml_tc_plain_text(tc) for tc in _ooxml_direct_children_by_suffix(tr, "tc")
+        ]
+        cells = [_normalize_text_for_issued_date(x) for x in cells_raw]
+        if len(cells) <= date_col_idx:
+            continue
+        r0 = cells[0].strip()
+        if not re.match(r"^\d{1,4}$", r0):
+            continue
+        date_cell = cells[date_col_idx]
+        m = _REVISION_TBL_DATE.search(date_cell)
+        if m:
+            last_m = m
+    if last_m:
+        return _fmt_yyyy_mm_dd(last_m.group(1), last_m.group(2), last_m.group(3))
+    return None
+
+
+def _issued_date_from_revision_table(xml_bytes: bytes) -> str | None:
+    """
+    document.xml에서「제/개정 일자」열이 있는 개정 이력 표를 모두 찾아,
+    각 표의 마지막 유효 날짜 후보를 모은 뒤 달력상 가장 늦은 날짜를 반환.
+    BCE01·BCE03·BCEPP 등 다음 페이지에 이어지는 표가 최신인 서식에 대응.
+    """
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return None
+    body = None
+    for el in root.iter():
+        if _ooxml_local_tag_suffix(el.tag) == "body":
+            body = el
+            break
+    if body is None:
+        return None
+    candidates: list[str] = []
+    for tbl in body.iter():
+        if _ooxml_local_tag_suffix(tbl.tag) != "tbl":
+            continue
+        d = _revision_table_last_date(tbl)
+        if d:
+            candidates.append(d)
+    if not candidates:
+        return None
+    return max(candidates, key=_yyyy_mm_dd_sort_key)
+
+
+def _issued_date_from_docx_headers(path: str) -> str | None:
+    """
+    제/개정 일자: (1) 본문에 개정 이력 표가 여러 개면 각 표의 마지막 유효 일자 중 가장 늦은 날,
+    (2) 없으면 머리글·바닥글·각주·미주 및 본문 앞단에서 Issued Date 등 휴리스틱.
+    """
+    if not path or not isinstance(path, str):
+        return None
+    raw_doc: bytes | None = None
+    try:
+        with open(path, "rb") as f:
+            raw_doc = f.read()
+    except OSError:
+        return None
+    if not raw_doc or len(raw_doc) < 4 or raw_doc[:2] != b"PK":
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_doc), "r") as zf:
+            doc_part = (
+                "word/document.xml" if "word/document.xml" in zf.namelist() else None
+            )
+            doc_xml_bytes: bytes | None = None
+            if doc_part:
+                try:
+                    doc_xml_bytes = zf.read(doc_part)
+                    t_rev = _issued_date_from_revision_table(doc_xml_bytes)
+                    if t_rev:
+                        return t_rev
+                except KeyError:
+                    doc_xml_bytes = None
+            part_names_hf = _docx_xml_names_for_issued(zf)
+            blobs: dict[str, str] = {}
+            for part in part_names_hf:
+                try:
+                    raw = zf.read(part)
+                except KeyError:
+                    continue
+                blobs[part] = _ooxml_collect_text_doc_order(raw)
+            big_hf = _normalize_text_for_issued_date(
+                "".join(blobs[p] for p in sorted(blobs))
+            )
+            blob_doc = ""
+            if doc_xml_bytes is not None:
+                blob_doc = _ooxml_collect_text_doc_order(
+                    doc_xml_bytes, max_paragraphs=120
+                )
+
+            candidates: list[tuple[tuple[int, int, int], re.Match]] = []
+            for part, blob in blobs.items():
+                r = _match_issued_date_with_priority(blob)
+                if r:
+                    prio, m = r
+                    kind, idx = _issued_part_sort_key(part)
+                    candidates.append(((prio, kind, -idx), m))
+
+            if doc_part and blob_doc.strip():
+                r = _match_issued_date_with_priority(blob_doc)
+                if r:
+                    prio, m = r
+                    kind, idx = _issued_part_sort_key(doc_part)
+                    candidates.append(((prio, kind, -idx), m))
+
+            r = _match_issued_date_with_priority(big_hf)
+            if r:
+                prio, m = r
+                candidates.append(((prio, 0, 0), m))
+
+            big_all = _normalize_text_for_issued_date(
+                (big_hf + " " + blob_doc) if blob_doc else big_hf
+            )
+            for m2 in _PLAIN_DATE_RE.finditer(big_hf):
+                tail = big_hf[m2.end() : m2.end() + 48]
+                if re.search(r"Rev\.?\s*\d", tail, re.I):
+                    candidates.append(((4, 0, 0), m2))
+                    break
+            if blob_doc.strip() and big_all != big_hf:
+                for m2 in _PLAIN_DATE_RE.finditer(big_all):
+                    tail = big_all[m2.end() : m2.end() + 48]
+                    if re.search(r"Rev\.?\s*\d", tail, re.I):
+                        candidates.append(((4, 1, 0), m2))
+                        break
+
+            if not candidates:
+                r = _match_issued_date_with_priority(big_all)
+                if r:
+                    prio, m = r
+                    candidates.append(((prio, 6, 0), m))
+
+            if candidates:
+                _, best = min(candidates, key=lambda x: x[0])
+                y, mo, d = best.group(1), best.group(2), best.group(3)
+                return _fmt_yyyy_mm_dd(y, mo, d)
+    except (zipfile.BadZipFile, OSError, RuntimeError):
+        return None
+    return None
+
+
 def _build_catalog_rows(model_code: str, all_docs: list) -> list:
     """
-    스프레드시트 형식: 모델명, 문서번호, 문서명, 버전.
+    스프레드시트 형식: 모델명, 문서번호, 문서명, 제/개정일, 버전.
     NAS 파일명에서 7501-NN 및 R개정을 찾아 버전·문서번호를 채움.
+    제/개정일은 매칭된 docx에서 개정 이력 표 우선, 없으면 머리글·본문 등에서 읽음.
     """
     rows_out = []
     for seq, title in _MANUFACTURING_INSTRUCTION_CATALOG:
@@ -113,22 +472,28 @@ def _build_catalog_rows(model_code: str, all_docs: list) -> list:
                 best = (r, ts, d)
         if best is not None:
             rev, _ts, d = best
+            fp = d.get("full_path") or ""
+            idate = _issued_date_from_docx_headers(fp)
             rows_out.append(
                 {
                     "model_name": model_code,
                     "document_number": f"ESH-WS({model_code})-7501-{seq}-R{rev}",
                     "document_title": title,
+                    "issue_revision_date": idate,
                     "version": f"R{rev}",
                     "matched_filename": d["filename"],
                 }
             )
         elif matches:
             d = max(matches, key=_doc_modified_timestamp)
+            fp = d.get("full_path") or ""
+            idate = _issued_date_from_docx_headers(fp)
             rows_out.append(
                 {
                     "model_name": model_code,
                     "document_number": f"ESH-WS({model_code})-7501-{seq}",
                     "document_title": title,
+                    "issue_revision_date": idate,
                     "version": "—",
                     "matched_filename": d["filename"],
                 }
@@ -139,6 +504,7 @@ def _build_catalog_rows(model_code: str, all_docs: list) -> list:
                     "model_name": model_code,
                     "document_number": f"ESH-WS({model_code})-7501-{seq}",
                     "document_title": title,
+                    "issue_revision_date": None,
                     "version": "—",
                     "matched_filename": None,
                 }
