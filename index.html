@@ -247,7 +247,7 @@
                     </div>
                 </div>
 
-                <div class="bom-instruction-layout">
+                <div class="bom-instruction-layout bom-instruction-layout--slim-side">
                     <!-- 좌측 메인 영역 -->
                     <div class="bom-main-content">
                         <!-- Level 0 입력 카드 -->
@@ -296,17 +296,17 @@
                                     </span>
                                 </div>
                                 <div class="table-container">
-                                    <table style="table-layout: fixed; min-width: 1100px;">
+                                    <table style="table-layout: fixed; min-width: 1040px;">
                                         <thead>
                                             <tr>
-                                                <th style="width: 150px; text-align:center; white-space: nowrap;">상위 Lot</th>
-                                                <th style="width: 110px;">Code No.</th>
-                                                <th style="width: 170px;">명칭 / 구성품</th>
-                                                <th style="width: 100px; text-align:right;">필요 수량</th>
-                                                <th style="width: 60px; text-align:center;">단위</th>
-                                                <th style="width: 320px; white-space: nowrap;">할당 Lot</th>
-                                                <th style="width: 110px; white-space: nowrap;">유효기간</th>
-                                                <th style="width: 90px; text-align:right;">할당수량</th>
+                                                <th style="width: 140px; text-align:center; white-space: nowrap;">상위 Lot</th>
+                                                <th style="width: 100px;">Code No.</th>
+                                                <th style="width: 160px;">명칭 / 구성품</th>
+                                                <th style="width: 92px; text-align:right;">필요 수량</th>
+                                                <th style="width: 52px; text-align:center;">단위</th>
+                                                <th style="width: 260px; white-space: nowrap;">할당 Lot</th>
+                                                <th style="width: 100px; white-space: nowrap;">유효기간</th>
+                                                <th style="width: 96px; text-align:right; white-space: nowrap;">할당수량</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -343,28 +343,22 @@
                         </template>
                     </div>
 
-                    <!-- 우측 사이드 패널 -->
-                    <div class="bom-side-panel">
+                    <!-- 우측 사이드 패널 (실행 탭: 버튼 없음·폭 축소로 Level1 할당수량 열 확보) -->
+                    <div class="bom-side-panel bom-side-panel--slim">
                         <div class="side-card">
                             <div class="side-card-header">
                                 <i class="fas fa-box-open" style="color: var(--primary);"></i>
                                 <span>완제품</span>
                             </div>
-                            <div class="side-card-body">
+                            <div class="side-card-body side-card-body--compact">
                                 <div v-if="piList.length > 0" class="panel-list">
-                                    <div v-for="pi in piList" :key="pi.id" class="panel-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px dashed var(--border);">
-                                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                                            <span style="font-weight: 700; color: var(--primary);">{{ pi.label }}</span>
-                                            <div style="font-size: 0.8rem; color: var(--text-main); font-weight: 500;">{{ pi.latestDocNo }}</div>
-                                        </div>
-                                        <div style="display: flex; flex-direction: column; gap: 6px;">
-                                            <button class="btn btn-outline btn-mini" @click="openPackagingInstruction(pi)">포장지시서</button>
-                                            <button class="btn btn-outline btn-mini" @click="openProductManagement(pi)">완제품관리</button>
-                                        </div>
+                                    <div v-for="pi in piList" :key="pi.id" class="panel-item panel-item--text-only">
+                                        <span style="font-weight: 700; color: var(--primary); word-break: break-word;">{{ pi.label }}</span>
+                                        <div style="font-size: 0.75rem; color: var(--text-main); font-weight: 500; word-break: break-all;">{{ pi.latestDocNo }}</div>
                                     </div>
                                 </div>
-                                <p v-else style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">
-                                    '적용' 버튼 클릭 시 PI 항목이 표시됩니다.
+                                <p v-else style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 16px 0; margin: 0;">
+                                    '적용' 시 PI가 표시됩니다.
                                 </p>
                             </div>
                         </div>
@@ -374,21 +368,16 @@
                                 <i class="fas fa-industry" style="color: var(--accent);"></i>
                                 <span>반제품</span>
                             </div>
-                            <div class="side-card-body">
+                            <div class="side-card-body side-card-body--compact">
                                 <div v-if="semiLotList.length > 0" class="panel-list">
-                                    <div v-for="(semi, sIdx) in semiLotList" :key="'us-' + sIdx + '-' + (semi.id || semi.division)" class="panel-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px dashed var(--border);">
-                                        <div style="display: flex; flex-direction: column; gap: 4px;">
-                                            <span style="font-weight: 700; color: var(--accent);">{{ semi.division }}</span>
-                                            <div v-if="semi.calcLot" style="font-family: monospace; font-size: 0.8rem; color: var(--primary); font-weight: 600;">{{ semi.calcLot }}</div>
-                                            <div v-else style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">Lot 미생성</div>
-                                        </div>
-                                        <div style="display: flex; flex-direction: column; gap: 6px;">
-                                            <button type="button" class="btn btn-outline btn-mini" @click="openUploadSemiProductManagement(semi)">반제품 관리</button>
-                                        </div>
+                                    <div v-for="(semi, sIdx) in semiLotList" :key="'us-' + sIdx + '-' + (semi.id || semi.division)" class="panel-item panel-item--text-only">
+                                        <span style="font-weight: 700; color: var(--accent); word-break: break-word;">{{ semi.division }}</span>
+                                        <div v-if="semi.calcLot" style="font-family: monospace; font-size: 0.75rem; color: var(--primary); font-weight: 600; word-break: break-all;">{{ semi.calcLot }}</div>
+                                        <div v-else style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">Lot 미생성</div>
                                     </div>
                                 </div>
-                                <p v-else style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">
-                                    '반제품 Lot 생성'을 통해 항목이 추가됩니다.
+                                <p v-else style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 16px 0; margin: 0;">
+                                    '반제품 Lot 생성'으로 추가됩니다.
                                 </p>
                             </div>
                         </div>

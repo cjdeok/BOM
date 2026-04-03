@@ -269,8 +269,33 @@ tr:last-child td { border-bottom: none; }
 .bom-instruction-layout { display: flex; gap: 20px; align-items: flex-start; }
 .bom-main-content { flex: 1; min-width: 0; }
 .bom-side-panel { width: 320px; flex-shrink: 0; position: sticky; top: calc(var(--header-h) + 16px); }
+/* 제조지시 실행: 우측 패널만 축소 (기록 탭은 320px 유지) */
+.bom-side-panel.bom-side-panel--slim {
+    width: 188px;
+    max-width: min(188px, 22vw);
+}
+.bom-instruction-layout--slim-side {
+    gap: 14px;
+}
+.side-card-body--compact {
+    padding: 10px 12px;
+}
+.panel-item--text-only {
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.panel-item--text-only:last-child {
+    border-bottom: none;
+}
 .side-card { background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow); margin-bottom: 16px; overflow: hidden; }
 .side-card-header { padding: 14px 18px; background: #F8FAFC; border-bottom: 1px solid var(--border); font-weight: 700; display: flex; align-items: center; gap: 10px; color: #0F172A; font-size: 0.9rem; }
+.bom-side-panel--slim .side-card-header {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+}
 .side-card-body { padding: 16px; }
 
 /* =========================================
