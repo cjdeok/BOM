@@ -33,6 +33,17 @@ _Z_MI_BASE = (
     r"\ESH-7501-생산관리 절차서\지침서\제조지침서"
 )
 
+# NAS 표준작업지침서 루트 (모델별 BCE01~ 하위, 각 모델 폴더 안에 R1/R2/… 하위 → 숫자 최대 폴더에 .docx 1부)
+# - SWI_DOC_BASE: MI_DOC_BASE 와 같이 ; 로 여러 후보 지정 가능
+_UNC_SWI_BASE = (
+    r"\\ens-nas918\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-DHF-BCE-SOP-01 표준작업지침서"
+)
+_Z_SWI_BASE = (
+    r"Z:\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-DHF-BCE-SOP-01 표준작업지침서"
+)
+
 
 def _mi_root_candidates():
     """시도할 제조지침서 상위 폴더 목록 (앞쪽이 우선)."""
@@ -49,8 +60,25 @@ def _mi_root_candidates():
     return paths
 
 
+def _swi_root_candidates():
+    """표준작업지침서 상위 폴더 후보 (앞쪽이 우선)."""
+    paths = []
+    env = (os.environ.get("SWI_DOC_BASE") or "").strip()
+    if env:
+        for part in re.split(r"[;|\n]", env):
+            p = part.strip().strip('"').strip("'")
+            if p and p not in paths:
+                paths.append(p)
+    for p in (_UNC_SWI_BASE, _Z_SWI_BASE):
+        if p not in paths:
+            paths.append(p)
+    return paths
+
+
 MANUFACTURING_INSTRUCTION_SUBFOLDERS = ("BCE01", "BCE02", "BCE03", "BCE04", "BCEPP")
 _MI_FILENAME_REV_RE = re.compile(r"(?i)R(\d+)")
+# 표준작업지침서: 모델 폴더 아래 R1, R2, … 하위 폴더 (숫자 최대 = 최신)
+_SWI_R_SUBDIR_RE = re.compile(r"(?i)^R(\d+)$")
 
 # BCE 모델 공통: 문서번호 ESH-WS({모델})-7501-NN-Rx · 문서명 (표준 14종)
 _MANUFACTURING_INSTRUCTION_CATALOG = (
@@ -119,6 +147,11 @@ _PLAIN_DATE_RE = re.compile(r"(?<![0-9])(20\d{2})[\.\-/](\d{1,2})[\.\-/](\d{1,2}
 _REVISION_TBL_DATE = re.compile(
     r"(?<![0-9])(\d{4})\s*[\.\-/]\s*(\d{1,2})\s*[\.\-/]\s*(\d{1,2})(?![0-9])"
 )
+# 개정 내용란의 [버전 5.3] · 전각 괄호 허용
+_REVISION_BRACKET_VERSION_RE = re.compile(
+    r"[\[［]\s*버전\s*([0-9]+(?:\.[0-9]+)*)\s*[\]］]",
+    re.I,
+)
 
 
 def _ooxml_local_tag_suffix(tag: str) -> str:
@@ -178,6 +211,17 @@ def _yyyy_mm_dd_sort_key(s: str) -> tuple[int, int, int]:
         return (int(parts[0]), int(parts[1]), int(parts[2]))
     except (ValueError, TypeError):
         return (0, 0, 0)
+
+
+def _revision_history_rows_sort_key(row: dict) -> tuple:
+    """개정 이력 행: 제/개정 일자 오름차순, 같은 날은 개정 No. 숫자 오름차순."""
+    prim = _yyyy_mm_dd_sort_key(str(row.get("date") or ""))
+    rev_raw = str(row.get("revision") or "").strip()
+    try:
+        rev_n = int(rev_raw)
+    except ValueError:
+        rev_n = 0
+    return (prim, rev_n)
 
 
 _OOXML_HDR_TAIL_RE = re.compile(
@@ -328,6 +372,209 @@ def _revision_table_last_date(tbl: ET.Element) -> str | None:
     return None
 
 
+def _revision_table_data_rows(tbl: ET.Element) -> list[dict] | None:
+    """
+    개정 이력 표 1개에서 데이터 행만 추출.
+    반환 None: 이 표가 개정 이력 형식이 아님. []: 형식은 맞으나 데이터 행 없음.
+    """
+    rows_el = _ooxml_direct_children_by_suffix(tbl, "tr")
+    date_col_idx: int | None = None
+    for tr in rows_el:
+        cells_raw = [
+            _ooxml_tc_plain_text(tc) for tc in _ooxml_direct_children_by_suffix(tr, "tc")
+        ]
+        cells = [_normalize_text_for_issued_date(x) for x in cells_raw]
+        for ci, ct in enumerate(cells):
+            if _revision_history_date_col_label(ct):
+                date_col_idx = ci
+                break
+        if date_col_idx is not None:
+            break
+    if date_col_idx is None:
+        return None
+    out: list[dict] = []
+    for tr in rows_el:
+        cells_raw = [
+            _ooxml_tc_plain_text(tc) for tc in _ooxml_direct_children_by_suffix(tr, "tc")
+        ]
+        cells = [_normalize_text_for_issued_date(x) for x in cells_raw]
+        if len(cells) <= date_col_idx:
+            continue
+        r0 = cells[0].strip()
+        if not re.match(r"^\d{1,4}$", r0):
+            continue
+        date_cell = cells[date_col_idx]
+        m = _REVISION_TBL_DATE.search(date_cell)
+        if not m:
+            continue
+        date_fmt = _fmt_yyyy_mm_dd(m.group(1), m.group(2), m.group(3))
+        rest = cells[date_col_idx + 1 :]
+        content = ""
+        approval = ""
+        if len(rest) >= 4:
+            content = rest[0].strip()
+            approval = " ".join(x.strip() for x in rest[1:4] if x.strip())
+        elif len(rest) >= 1:
+            content = rest[0].strip()
+            approval = " ".join(x.strip() for x in rest[1:] if x.strip())
+        out.append(
+            {
+                "revision": r0,
+                "date": date_fmt,
+                "content": content,
+                "approval": approval,
+            }
+        )
+    return out
+
+
+def _revision_history_rows_from_document_xml(xml_bytes: bytes) -> list[dict]:
+    """document.xml에서 개정 이력 표(들)의 데이터 행을 본문 순서대로 이어 붙임."""
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return []
+    body = None
+    for el in root.iter():
+        if _ooxml_local_tag_suffix(el.tag) == "body":
+            body = el
+            break
+    if body is None:
+        return []
+    combined: list[dict] = []
+    for tbl in body.iter():
+        if _ooxml_local_tag_suffix(tbl.tag) != "tbl":
+            continue
+        chunk = _revision_table_data_rows(tbl)
+        if chunk is not None:
+            combined.extend(chunk)
+    combined.sort(key=_revision_history_rows_sort_key)
+    return combined
+
+
+def _bracket_doc_version_from_revision_rows(rows: list[dict]) -> str | None:
+    """
+    일자 오름차순 정렬된 개정 이력 행에서, 가장 최신(마지막) 쪽부터 [버전 x.y] 검색.
+    """
+    if not rows:
+        return None
+    for r in reversed(rows):
+        m = _REVISION_BRACKET_VERSION_RE.search((r.get("content") or ""))
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def _bracket_doc_version_from_revision_docx_path(path: str) -> str | None:
+    """docx 본문 개정 이력 표에서 문서 버전 문자열(예: 5.3)만 추출."""
+    if not path or not isinstance(path, str):
+        return None
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    if not raw or len(raw) < 4 or raw[:2] != b"PK":
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw), "r") as zf:
+            if "word/document.xml" not in zf.namelist():
+                return None
+            xml_bytes = zf.read("word/document.xml")
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError):
+        return None
+    rows = _revision_history_rows_from_document_xml(xml_bytes)
+    return _bracket_doc_version_from_revision_rows(rows)
+
+
+def _safe_instruction_docx_path(folder_key: str, filename: str, roots: list) -> str | None:
+    """NAS 지정 루트 하위 폴더 안의 .docx 절대경로만 허용 (경로 탈출 방지)."""
+    if not filename or not folder_key:
+        return None
+    fn = filename.strip()
+    if not fn or os.path.basename(fn) != fn or "/" in fn or "\\" in fn:
+        return None
+    base = fn
+    if not base.lower().endswith(".docx") or base.startswith("~$"):
+        return None
+    folder_path, _, _ = _resolve_instruction_subfolder(folder_key, roots)
+    if not folder_path:
+        return None
+    full = os.path.normpath(os.path.join(folder_path, base))
+    root_norm = os.path.normpath(folder_path)
+    try:
+        if os.path.commonpath([full, root_norm]) != root_norm:
+            return None
+    except ValueError:
+        return None
+    if not os.path.isfile(full):
+        return None
+    return full
+
+
+def _safe_mi_docx_path(folder_key: str, filename: str) -> str | None:
+    return _safe_instruction_docx_path(folder_key, filename, _mi_root_candidates())
+
+
+def _safe_swi_docx_path(folder_key: str, filename: str) -> str | None:
+    """
+    SWI: 모델 폴더 바로 아래(구형) 또는 숫자가 가장 큰 R* 하위 폴더 안의 .docx만 허용.
+    파일명이 여러 R 폴더에 있으면 R번호가 큰 쪽을 우선합니다.
+    """
+    if not filename or not folder_key:
+        return None
+    fn = filename.strip()
+    if not fn or os.path.basename(fn) != fn or "/" in fn or "\\" in fn:
+        return None
+    if not fn.lower().endswith(".docx") or fn.startswith("~$"):
+        return None
+    folder_path, _, _ = _resolve_instruction_subfolder(folder_key, _swi_root_candidates())
+    if not folder_path:
+        return None
+
+    def _is_file_under(child: str, parent: str) -> bool:
+        child_n = os.path.normpath(child)
+        parent_n = os.path.normpath(parent)
+        try:
+            return os.path.commonpath([child_n, parent_n]) == parent_n
+        except ValueError:
+            return False
+
+    def try_join(root: str) -> str | None:
+        full = os.path.normpath(os.path.join(root, fn))
+        if _is_file_under(full, root) and os.path.isfile(full):
+            return full
+        return None
+
+    p = try_join(folder_path)
+    if p:
+        return p
+    r_path, _ = _swi_latest_r_folder_path(folder_path)
+    if r_path:
+        p = try_join(r_path)
+        if p:
+            return p
+    work, names = _folder_work_path_and_names(folder_path)
+    if work and names:
+        r_dirs: list[tuple[int, str]] = []
+        for name in names:
+            m = _SWI_R_SUBDIR_RE.match(name.strip())
+            if not m:
+                continue
+            cand = os.path.join(work, name)
+            try:
+                if os.path.isdir(cand):
+                    r_dirs.append((int(m.group(1)), cand))
+            except OSError:
+                continue
+        r_dirs.sort(key=lambda x: -x[0])
+        for _rev, rp in r_dirs:
+            p = try_join(rp)
+            if p:
+                return p
+    return None
+
+
 def _issued_date_from_revision_table(xml_bytes: bytes) -> str | None:
     """
     document.xml에서「제/개정 일자」열이 있는 개정 이력 표를 모두 찾아,
@@ -453,14 +700,16 @@ def _issued_date_from_docx_headers(path: str) -> str | None:
     return None
 
 
-def _build_catalog_rows(model_code: str, all_docs: list) -> list:
+def _build_catalog_rows(model_code: str, all_docs: list, catalog: tuple | None = None) -> list:
     """
     스프레드시트 형식: 모델명, 문서번호, 문서명, 제/개정일, 버전.
     NAS 파일명에서 7501-NN 및 R개정을 찾아 버전·문서번호를 채움.
     제/개정일은 매칭된 docx에서 개정 이력 표 우선, 없으면 머리글·본문 등에서 읽음.
+    catalog: 기본 제조지침서 14종 (표준작업지침서는 별도 SWI 페이로드).
     """
     rows_out = []
-    for seq, title in _MANUFACTURING_INSTRUCTION_CATALOG:
+    cat = catalog if catalog is not None else _MANUFACTURING_INSTRUCTION_CATALOG
+    for seq, title in cat:
         matches = [d for d in all_docs if _file_matches_instruction_seq(d["filename"], seq)]
         best = None
         for d in matches:
@@ -537,6 +786,32 @@ def _folder_work_path_and_names(folder_path: str):
     if names is None:
         return None, None
     return work_path, names
+
+
+def _swi_latest_r_folder_path(model_folder_path: str) -> tuple[str | None, int | None]:
+    """모델 폴더 직계 자식 중 이름이 R+숫자인 폴더만 보고, 숫자가 가장 큰 경로를 반환."""
+    work, names = _folder_work_path_and_names(model_folder_path)
+    if not work or not names:
+        return None, None
+    best_path: str | None = None
+    best_n = -1
+    for name in names:
+        m = _SWI_R_SUBDIR_RE.match(name.strip())
+        if not m:
+            continue
+        n = int(m.group(1))
+        candidate = os.path.join(work, name)
+        try:
+            if not os.path.isdir(candidate):
+                continue
+        except OSError:
+            continue
+        if n > best_n:
+            best_n = n
+            best_path = candidate
+    if best_path is None:
+        return None, None
+    return best_path, best_n
 
 
 def _scan_all_docx_in_folder(folder_path: str):
@@ -719,36 +994,58 @@ def _list_subdir_names_under_parent(parent_path: str):
     return None, None
 
 
+_MI_CHILD_LEADING_INDEX_RE = re.compile(r"^\d+\.\s*")
+
+
+def _strip_mi_child_leading_index(name: str) -> str:
+    """표준작업지침서 등: '1. BCE01 (96 well)' → 'BCE01 (96 well)'."""
+    return _MI_CHILD_LEADING_INDEX_RE.sub("", (name or "").strip(), count=1)
+
+
+def _child_folder_paren_match(name: str, sub_codes: str) -> bool:
+    """BCE01(96) 또는 BCE01 (96 well) 또는 앞에 '1. ' 번호 접두."""
+    s = _strip_mi_child_leading_index(name)
+    if s.startswith(sub_codes + "("):
+        return True
+    return re.match(rf"^{re.escape(sub_codes)}\s+\(", s) is not None
+
+
 def _pick_mi_child_folder_path(parent_work: str, child_names: list, sub_codes: str):
     """
     sub_codes: BCE01 등 UI 코드.
-    NAS 실제 폴더명이 BCE01(96-well), BCEPP(PP) 인 경우 매칭.
+    NAS 실제 폴더명이 BCE01(96-well), BCEPP(PP), '1. BCE01 (96 well)' 인 경우 매칭.
     반환: 자식 폴더 절대 경로 또는 None
     """
     if not child_names:
         return None
     if sub_codes in child_names:
         return os.path.join(parent_work, sub_codes)
-    paren = [n for n in child_names if n.startswith(sub_codes + "(")]
+    paren = [n for n in child_names if _child_folder_paren_match(n, sub_codes)]
     if len(paren) == 1:
         return os.path.join(parent_work, paren[0])
     if len(paren) > 1:
         paren.sort(key=len)
         return os.path.join(parent_work, paren[0])
     loose = [n for n in child_names if n.startswith(sub_codes)]
+    if not loose:
+        loose = [
+            n
+            for n in child_names
+            if _strip_mi_child_leading_index(n).startswith(sub_codes)
+        ]
     if loose:
         loose.sort(key=len)
         return os.path.join(parent_work, loose[0])
     return None
 
 
-def _resolve_mi_subfolder(sub: str):
+def _resolve_instruction_subfolder(sub: str, roots: list):
     """
-    BCE01 등 하위 폴더에 대해, 후보 루트 중 첫 번째로 존재·접근 가능한 경로를 반환.
-    반환: (folder_path 또는 None, 사용된 루트 또는 None, 시도한 전체 하위 경로 목록)
+    BCE01 등 하위 폴더에 대해, 주어진 루트 후보 중 첫 접근 가능 경로.
+    반환: (folder_path 또는 None, 사용된 루트 또는 None, 시도한 경로 목록)
     """
     tried = []
-    for root in _mi_root_candidates():
+    for root in roots:
         folder = os.path.normpath(os.path.join(root, sub))
         tried.append(folder)
         for candidate in _win_path_access_variants(folder):
@@ -788,42 +1085,36 @@ def _resolve_mi_subfolder(sub: str):
     return None, None, tried
 
 
+def _resolve_mi_subfolder(sub: str):
+    """제조지침서 루트 기준 하위 폴더."""
+    return _resolve_instruction_subfolder(sub, _mi_root_candidates())
+
+
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-# --- 공통 및 정적 파일 서버 ---
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
 
-@app.route('/styles.css')
-def serve_css():
-    return send_from_directory('.', 'styles.css')
-
-@app.route('/app.js')
-def serve_js():
-    return send_from_directory('.', 'app.js')
+def _instruction_nas_hint(env_name: str) -> str:
+    return (
+        "탐색기에서는 열리는데 여기서만 안 될 때: 서버는 Windows에서 cmd dir로 목록을 한 번 더 시도합니다. "
+        "그래도 실패하면 PC를 재로그온한 뒤, 바탕화면의 'cmd'에서 프로젝트 폴더로 이동해 python unified_server.py 로 실행해 보세요 "
+        "(Cursor 터미널과 동일 사용자여도 드라이브 핸들이 다를 수 있습니다). "
+        f"{env_name}로 탐색기 주소줄 경로를 지정할 수도 있습니다."
+    )
 
 
-@app.route('/api/manufacturing_instruction_latest')
-def api_manufacturing_instruction_latest():
-    """BCE01~BCEPP 각 폴더에서 파일명 R개정이 가장 큰 .docx 1개씩 조회 (버튼/온디맨드용)."""
-    roots = _mi_root_candidates()
+def _instruction_latest_payload(roots: list, catalog: tuple, env_hint_name: str) -> dict:
+    """제조지침서·표준작업지침서 공통: 모델별 폴더 스캔 결과 JSON dict."""
     out = {
         "base": roots[0] if roots else "",
         "roots_tried": roots,
         "folders": {},
     }
-    _not_found_hint = (
-        "탐색기에서는 열리는데 여기서만 안 될 때: 서버는 Windows에서 cmd dir로 목록을 한 번 더 시도합니다. "
-        "그래도 실패하면 PC를 재로그온한 뒤, 바탕화면의 'cmd'에서 프로젝트 폴더로 이동해 python unified_server.py 로 실행해 보세요 "
-        "(Cursor 터미널과 동일 사용자여도 드라이브 핸들이 다를 수 있습니다). "
-        "MI_DOC_BASE로 탐색기 주소줄 경로를 지정할 수도 있습니다."
-    )
+    hint = _instruction_nas_hint(env_hint_name)
     for sub in MANUFACTURING_INSTRUCTION_SUBFOLDERS:
-        folder, used_root, tried = _resolve_mi_subfolder(sub)
+        folder, used_root, tried = _resolve_instruction_subfolder(sub, roots)
         if folder is None:
             out["folders"][sub] = {
                 "ok": False,
@@ -831,7 +1122,7 @@ def api_manufacturing_instruction_latest():
                 "message": "폴더에 접근할 수 없거나 존재하지 않습니다.",
                 "folder_path": tried[-1] if tried else sub,
                 "tried_paths": tried,
-                "hint": _not_found_hint,
+                "hint": hint,
             }
             continue
         all_docs, _ad_err, _ad_msg = _scan_all_docx_in_folder(folder)
@@ -847,7 +1138,7 @@ def api_manufacturing_instruction_latest():
             continue
 
         best, err_code, err_msg = _scan_latest_docx_by_revision(folder)
-        catalog_rows = _build_catalog_rows(sub, all_docs)
+        catalog_rows = _build_catalog_rows(sub, all_docs, catalog)
         payload = {
             "ok": True,
             "folder_path": folder,
@@ -875,24 +1166,252 @@ def api_manufacturing_instruction_latest():
             for d in all_docs:
                 d["is_latest_in_folder"] = False
         out["folders"][sub] = payload
+    return out
+
+
+def _build_swi_catalog_rows(model_code: str, all_docs: list, r_num: int | None) -> list:
+    """표준작업지침서: 모델당 1행 (최신 R폴더 기준). 버전은 개정 내용 [버전 x.y] 우선, 없으면 R폴더명."""
+    r_folder_label = f"R{r_num}" if r_num is not None else "—"
+    doc_num = f"{model_code} / {r_folder_label}" if r_num is not None else model_code
+    if not all_docs:
+        return [
+            {
+                "model_name": model_code,
+                "document_number": doc_num,
+                "document_title": "표준 작업 지침서",
+                "issue_revision_date": None,
+                "version": r_folder_label,
+                "matched_filename": None,
+            }
+        ]
+    best = max(all_docs, key=_doc_modified_timestamp)
+    fp = best.get("full_path") or ""
+    idate = _issued_date_from_docx_headers(fp)
+    bracket_ver = _bracket_doc_version_from_revision_docx_path(fp)
+    version_display = bracket_ver if bracket_ver else r_folder_label
+    return [
+        {
+            "model_name": model_code,
+            "document_number": doc_num,
+            "document_title": "표준 작업 지침서",
+            "issue_revision_date": idate,
+            "version": version_display,
+            "matched_filename": best["filename"],
+        }
+    ]
+
+
+def _instruction_swi_latest_payload(roots: list, env_hint_name: str) -> dict:
+    """표준작업지침서: 모델/BCE01 등 → 그 안의 R1,R2,… 중 최대 번호 폴더 → 그 안의 .docx."""
+    out = {
+        "base": roots[0] if roots else "",
+        "roots_tried": roots,
+        "folders": {},
+        "layout": "swi_model_r_latest_docx",
+    }
+    hint = _instruction_nas_hint(env_hint_name)
+    for sub in MANUFACTURING_INSTRUCTION_SUBFOLDERS:
+        folder, used_root, tried = _resolve_instruction_subfolder(sub, roots)
+        if folder is None:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": "not_found",
+                "message": "폴더에 접근할 수 없거나 존재하지 않습니다.",
+                "folder_path": tried[-1] if tried else sub,
+                "tried_paths": tried,
+                "hint": hint,
+            }
+            continue
+
+        r_path, r_num = _swi_latest_r_folder_path(folder)
+        if not r_path or r_num is None:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": "no_r_folder",
+                "message": "모델 폴더 안에 R1, R2, … 형태의 하위 폴더를 찾지 못했습니다.",
+                "folder_path": folder,
+                "resolved_base": used_root,
+                "nas_folder_name": os.path.basename(folder),
+                "tried_paths": tried,
+                "hint": hint,
+            }
+            continue
+
+        all_docs, ad_err, ad_msg = _scan_all_docx_in_folder(r_path)
+        if all_docs is None:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": ad_err,
+                "message": ad_msg,
+                "folder_path": folder,
+                "swi_latest_r_path": r_path,
+                "swi_latest_r_revision": r_num,
+                "resolved_base": used_root,
+                "tried_paths": tried,
+            }
+            continue
+
+        for d in all_docs:
+            d["swi_r_folder"] = r_num
+
+        catalog_rows = _build_swi_catalog_rows(sub, all_docs, r_num)
+        payload = {
+            "ok": True,
+            "folder_path": folder,
+            "swi_latest_r_path": r_path,
+            "swi_latest_r_revision": r_num,
+            "resolved_base": used_root,
+            "nas_folder_name": os.path.basename(folder),
+            "catalog_rows": catalog_rows,
+            "documents": all_docs,
+            "documents_count": len(all_docs),
+            "tried_paths": tried,
+        }
+        if all_docs:
+            best = max(all_docs, key=_doc_modified_timestamp)
+            payload["filename"] = best["filename"]
+            payload["full_path"] = best["full_path"]
+            payload["revision"] = r_num
+            payload["modified"] = best.get("modified")
+            for d in all_docs:
+                d["is_latest_in_folder"] = (
+                    d["filename"] == best["filename"]
+                    and d.get("full_path") == best.get("full_path")
+                )
+        else:
+            payload["revision"] = r_num
+            payload["filename"] = None
+            payload["full_path"] = None
+            payload["modified"] = None
+            payload["latest_note"] = "최신 R 폴더에 .docx가 없습니다."
+        out["folders"][sub] = payload
+    return out
+
+
+# --- 공통 및 정적 파일 서버 ---
+@app.route('/')
+def index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/styles.css')
+def serve_css():
+    return send_from_directory('.', 'styles.css')
+
+@app.route('/app.js')
+def serve_js():
+    return send_from_directory('.', 'app.js')
+
+
+@app.route('/api/manufacturing_instruction_latest')
+def api_manufacturing_instruction_latest():
+    """BCE01~BCEPP 각 폴더에서 제조지침서 .docx 조회."""
+    out = _instruction_latest_payload(
+        _mi_root_candidates(), _MANUFACTURING_INSTRUCTION_CATALOG, "MI_DOC_BASE"
+    )
     return jsonify(out)
 
 
-@app.route("/api/manufacturing_instruction_diag")
-def api_manufacturing_instruction_diag():
-    """탐색기와 달리 Python이 Z:/UNC를 못 볼 때 원인 확인용 (브라우저에서 직접 호출 가능)."""
-    import ctypes
+@app.route("/api/standard_work_instruction_latest")
+def api_standard_work_instruction_latest():
+    """BCE01~BCEPP: 모델 폴더 내 R* 하위 중 최신 폴더의 표준작업지침서 .docx 1부."""
+    out = _instruction_swi_latest_payload(_swi_root_candidates(), "SWI_DOC_BASE")
+    return jsonify(out)
 
-    out = {"z_drive_type": None, "z_drive_label": None, "roots": []}
-    if os.name == "nt":
-        try:
-            t = ctypes.windll.kernel32.GetDriveTypeW("Z:\\")
-            labels = {0: "UNKNOWN", 1: "NO_ROOT", 2: "REMOVABLE", 3: "FIXED", 4: "REMOTE", 5: "CDROM", 6: "RAMDISK"}
-            out["z_drive_type"] = t
-            out["z_drive_label"] = labels.get(t, str(t))
-        except Exception as e:
-            out["z_drive_error"] = str(e)
-    for root in _mi_root_candidates():
+
+def _json_revision_history_response(fk: str, fn: str, path: str | None):
+    """개정 이력 표 파싱 결과 Flask 응답."""
+    if not path:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "not_found",
+                "message": "파일을 찾을 수 없거나 허용되지 않는 경로입니다.",
+            }
+        ), 404
+    try:
+        with open(path, "rb") as f:
+            raw_doc = f.read()
+    except OSError as e:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "read_error",
+                "message": str(e),
+            }
+        ), 500
+    if not raw_doc or len(raw_doc) < 4 or raw_doc[:2] != b"PK":
+        return jsonify(
+            {
+                "ok": False,
+                "error": "invalid_docx",
+                "message": "docx 형식이 아닙니다.",
+            }
+        ), 400
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_doc), "r") as zf:
+            if "word/document.xml" not in zf.namelist():
+                rows = []
+            else:
+                rows = _revision_history_rows_from_document_xml(zf.read("word/document.xml"))
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError) as e:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "parse_error",
+                "message": str(e),
+            }
+        ), 500
+    return jsonify(
+        {
+            "ok": True,
+            "folder": fk,
+            "filename": fn,
+            "rows": rows,
+            "row_count": len(rows),
+        }
+    )
+
+
+@app.route("/api/manufacturing_instruction_revision_history")
+def api_manufacturing_instruction_revision_history():
+    """
+    제조지침서 .docx 본문의「문서 개정 이력」표 데이터 (여러 표·다음 페이지 이어짐 포함).
+    Query: folder=BCE01&filename=...
+    """
+    fk = (request.args.get("folder") or "").strip()
+    fn = (request.args.get("filename") or "").strip()
+    if not fk or not fn:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "missing_params",
+                "message": "folder와 filename 파라미터가 필요합니다.",
+            }
+        ), 400
+    path = _safe_mi_docx_path(fk, fn)
+    return _json_revision_history_response(fk, fn, path)
+
+
+@app.route("/api/standard_work_instruction_revision_history")
+def api_standard_work_instruction_revision_history():
+    """표준작업지침서 NAS 경로 기준 개정 이력 표. Query: folder=BCE01&filename=..."""
+    fk = (request.args.get("folder") or "").strip()
+    fn = (request.args.get("filename") or "").strip()
+    if not fk or not fn:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "missing_params",
+                "message": "folder와 filename 파라미터가 필요합니다.",
+            }
+        ), 400
+    path = _safe_swi_docx_path(fk, fn)
+    return _json_revision_history_response(fk, fn, path)
+
+
+def _instruction_diag_root_rows(roots: list) -> list:
+    rows_out = []
+    for root in roots:
         row = {"root": root}
         try:
             row["python_isdir"] = os.path.isdir(root)
@@ -908,7 +1427,43 @@ def api_manufacturing_instruction_diag():
             _pw, subonly = _list_subdir_names_under_parent(root)
             if subonly:
                 row["subfolders_bce_match"] = sorted(subonly)[:30]
-        out["roots"].append(row)
+        rows_out.append(row)
+    return rows_out
+
+
+@app.route("/api/manufacturing_instruction_diag")
+def api_manufacturing_instruction_diag():
+    """탐색기와 달리 Python이 Z:/UNC를 못 볼 때 원인 확인용 (제조지침서 루트)."""
+    import ctypes
+
+    out = {"kind": "manufacturing_instruction", "z_drive_type": None, "z_drive_label": None, "roots": []}
+    if os.name == "nt":
+        try:
+            t = ctypes.windll.kernel32.GetDriveTypeW("Z:\\")
+            labels = {0: "UNKNOWN", 1: "NO_ROOT", 2: "REMOVABLE", 3: "FIXED", 4: "REMOTE", 5: "CDROM", 6: "RAMDISK"}
+            out["z_drive_type"] = t
+            out["z_drive_label"] = labels.get(t, str(t))
+        except Exception as e:
+            out["z_drive_error"] = str(e)
+    out["roots"] = _instruction_diag_root_rows(_mi_root_candidates())
+    return jsonify(out)
+
+
+@app.route("/api/standard_work_instruction_diag")
+def api_standard_work_instruction_diag():
+    """표준작업지침서 NAS 루트 연결 진단 (JSON)."""
+    import ctypes
+
+    out = {"kind": "standard_work_instruction", "z_drive_type": None, "z_drive_label": None, "roots": []}
+    if os.name == "nt":
+        try:
+            t = ctypes.windll.kernel32.GetDriveTypeW("Z:\\")
+            labels = {0: "UNKNOWN", 1: "NO_ROOT", 2: "REMOVABLE", 3: "FIXED", 4: "REMOTE", 5: "CDROM", 6: "RAMDISK"}
+            out["z_drive_type"] = t
+            out["z_drive_label"] = labels.get(t, str(t))
+        except Exception as e:
+            out["z_drive_error"] = str(e)
+    out["roots"] = _instruction_diag_root_rows(_swi_root_candidates())
     return jsonify(out)
 
 

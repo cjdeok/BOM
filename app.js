@@ -36,6 +36,8 @@ createApp({
         const miLatestLoading = ref(false);
         const miLatestError = ref('');
         const miLatestResult = ref(null);
+        const swiLatestError = ref('');
+        const swiLatestResult = ref(null);
         const miManageFolder = ref('BCE01');
 
         const breadcrumbLabel = computed(() => {
@@ -54,31 +56,106 @@ createApp({
             return data.folders[miManageFolder.value] ?? null;
         });
 
+        const selectedSwiManageEntry = computed(() => {
+            const data = swiLatestResult.value;
+            if (!data || !data.folders) return null;
+            return data.folders[miManageFolder.value] ?? null;
+        });
+
         const fetchManufacturingInstructionLatest = async () => {
             miLatestLoading.value = true;
             miLatestError.value = '';
+            swiLatestError.value = '';
             try {
-                const res = await fetch('/api/manufacturing_instruction_latest');
-                const data = await res.json();
-                if (!res.ok) {
-                    miLatestError.value = data.error || `HTTP ${res.status}`;
+                const [r1, r2] = await Promise.all([
+                    fetch('/api/manufacturing_instruction_latest'),
+                    fetch('/api/standard_work_instruction_latest')
+                ]);
+                const d1 = await r1.json();
+                const d2 = await r2.json();
+                if (!r1.ok) {
+                    miLatestError.value = d1.error || d1.message || `HTTP ${r1.status}`;
                     miLatestResult.value = null;
-                    return;
+                } else {
+                    miLatestResult.value = d1;
                 }
-                miLatestResult.value = data;
+                if (!r2.ok) {
+                    swiLatestError.value = d2.error || d2.message || `HTTP ${r2.status}`;
+                    swiLatestResult.value = null;
+                } else {
+                    swiLatestResult.value = d2;
+                }
             } catch (e) {
-                miLatestError.value = String(e.message || e);
+                const msg = String(e.message || e);
+                miLatestError.value = msg;
+                swiLatestError.value = msg;
                 miLatestResult.value = null;
+                swiLatestResult.value = null;
             } finally {
                 miLatestLoading.value = false;
             }
         };
 
         watch(currentTab, (tab) => {
-            if (tab === 'mi-manage' && !miLatestLoading.value && !miLatestResult.value) {
+            if (
+                tab === 'mi-manage' &&
+                !miLatestLoading.value &&
+                !miLatestResult.value &&
+                !swiLatestResult.value
+            ) {
                 fetchManufacturingInstructionLatest();
             }
         });
+
+        const showMiRevisionModal = ref(false);
+        const miRevisionLoading = ref(false);
+        const miRevisionError = ref('');
+        const miRevisionMeta = ref({ document_title: '', filename: '' });
+        const miRevisionRows = ref([]);
+
+        const closeMiRevisionModal = () => {
+            showMiRevisionModal.value = false;
+            miRevisionError.value = '';
+            miRevisionRows.value = [];
+            miRevisionMeta.value = { document_title: '', filename: '', kind_label: '' };
+        };
+
+        const openMiRevisionHistory = async (row, source = 'mi') => {
+            if (!row || !row.matched_filename) return;
+            miRevisionMeta.value = {
+                document_title: row.document_title || '',
+                filename: row.matched_filename || '',
+                kind_label: source === 'swi' ? '표준작업지침서' : '제조지침서'
+            };
+            miRevisionRows.value = [];
+            miRevisionError.value = '';
+            showMiRevisionModal.value = true;
+            miRevisionLoading.value = true;
+            const q = new URLSearchParams({
+                folder: miManageFolder.value,
+                filename: row.matched_filename
+            });
+            const apiUrl =
+                source === 'swi'
+                    ? `/api/standard_work_instruction_revision_history?${q}`
+                    : `/api/manufacturing_instruction_revision_history?${q}`;
+            try {
+                const res = await fetch(apiUrl);
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    miRevisionError.value = data.message || data.error || `HTTP ${res.status}`;
+                    return;
+                }
+                miRevisionRows.value = Array.isArray(data.rows) ? data.rows : [];
+                if (!miRevisionRows.value.length) {
+                    miRevisionError.value = '개정 이력 표에서 데이터 행을 찾지 못했습니다.';
+                }
+            } catch (e) {
+                miRevisionError.value = String(e.message || e);
+            } finally {
+                miRevisionLoading.value = false;
+            }
+        };
 
         // =============================================
         // CSV Upload State
@@ -1214,7 +1291,10 @@ createApp({
             showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
             viewDepth, setViewDepth,
             // CSV Upload Tab
-            miLatestLoading, miLatestError, miLatestResult, miManageFolder, selectedMiManageEntry, fetchManufacturingInstructionLatest,
+            miLatestLoading, miLatestError, miLatestResult, swiLatestError, swiLatestResult,
+            miManageFolder, selectedMiManageEntry, selectedSwiManageEntry, fetchManufacturingInstructionLatest,
+            showMiRevisionModal, miRevisionLoading, miRevisionError, miRevisionMeta, miRevisionRows,
+            openMiRevisionHistory, closeMiRevisionModal,
             csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
             triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
             showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,

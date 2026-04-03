@@ -404,7 +404,7 @@
                     <div class="section-title">
                         <i class="fas fa-file-contract" style="color: var(--primary);"></i>
                         <span>제조지침서 관리</span>
-                        <span class="section-subtitle" style="margin-left: 10px; font-weight: 400;">모델별 표준 14종 (문서번호·문서명·버전) + NAS 파일 매칭</span>
+                        <span class="section-subtitle" style="margin-left: 10px; font-weight: 400;">좌: 제조지침서 (14종) · 우: 표준작업지침서 (모델당 1부, 최신 R폴더)</span>
                     </div>
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
                         <button type="button" class="btn btn-outline" style="padding: 6px 16px; font-size: 0.85rem;" :disabled="miLatestLoading" @click="fetchManufacturingInstructionLatest">
@@ -412,12 +412,16 @@
                             {{ miLatestLoading ? '불러오는 중…' : 'NAS 새로고침' }}
                         </button>
                         <a class="btn btn-outline" style="padding: 6px 16px; font-size: 0.85rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" href="/api/manufacturing_instruction_diag" target="_blank" rel="noopener">
-                            <i class="fas fa-stethoscope"></i> 연결 진단 (JSON)
+                            <i class="fas fa-stethoscope"></i> 진단·제조지침
+                        </a>
+                        <a class="btn btn-outline" style="padding: 6px 16px; font-size: 0.85rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" href="/api/standard_work_instruction_diag" target="_blank" rel="noopener">
+                            <i class="fas fa-stethoscope"></i> 진단·표준작업
                         </a>
                     </div>
                 </div>
                 <div class="card-body">
-                    <p v-if="miLatestError" style="color: #b91c1c; font-size: 0.85rem; margin: 0 0 16px 0;">{{ miLatestError }}</p>
+                    <p v-if="miLatestError" style="color: #b91c1c; font-size: 0.85rem; margin: 0 0 8px 0;"><strong>제조지침서</strong> {{ miLatestError }}</p>
+                    <p v-if="swiLatestError" style="color: #b91c1c; font-size: 0.85rem; margin: 0 0 16px 0;"><strong>표준작업지침서</strong> {{ swiLatestError }}</p>
                     <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; margin-bottom: 24px;">
                         <div class="form-group" style="min-width: 220px; flex: 0 1 280px;">
                             <label>구역 / 폴더 선택</label>
@@ -430,78 +434,177 @@
                             </select>
                         </div>
                     </div>
-                    <div v-if="miLatestLoading && !miLatestResult" style="color: var(--text-muted); font-size: 0.9rem;">
+                    <div v-if="miLatestLoading && !miLatestResult && !swiLatestResult" style="color: var(--text-muted); font-size: 0.9rem;">
                         <i class="fas fa-spinner fa-spin"></i> NAS에서 정보를 가져오는 중입니다…
                     </div>
-                    <div v-else-if="!miLatestResult && !miLatestError" style="color: var(--text-muted); font-size: 0.85rem;">
+                    <div v-else-if="!miLatestResult && !swiLatestResult && !miLatestLoading && !miLatestError && !swiLatestError" style="color: var(--text-muted); font-size: 0.85rem;">
                         탭을 열면 자동으로 조회합니다. 수동으로 다시 읽으려면 「NAS 새로고침」을 누르세요.
                     </div>
-                    <div v-else-if="selectedMiManageEntry" class="mi-manage-detail" style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px;">
-                        <template v-if="selectedMiManageEntry.ok">
-                            <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">표준 제조지침서 목록 (14종)</div>
-                            <div class="mi-catalog-table-wrap" style="overflow-x: auto; overflow-y: visible; max-height: none; border: 1px solid #86efac; border-radius: 10px;">
-                                <table style="width: 100%; font-size: 0.76rem; border-collapse: collapse;">
-                                    <thead style="background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); color: #fff;">
-                                        <tr>
-                                            <th style="width: 64px; text-align: center; padding: 6px 6px;">모델명</th>
-                                            <th style="min-width: 160px; padding: 6px 6px;">문서번호</th>
-                                            <th style="min-width: 180px; padding: 6px 6px;">문서명</th>
-                                            <th style="width: 92px; text-align: center; white-space: nowrap; padding: 6px 4px;">제/개정일</th>
-                                            <th style="width: 44px; text-align: center; padding: 6px 4px;">버전</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="(row, idx) in (selectedMiManageEntry.catalog_rows || [])" :key="'cat-' + idx"
-                                            :style="{ background: idx % 2 === 0 ? '#f0fdf4' : '#ffffff' }">
-                                            <td style="text-align: center; font-weight: 700; color: var(--text-main); padding: 4px 6px; vertical-align: top;">{{ row.model_name }}</td>
-                                            <td style="word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.72rem; padding: 4px 6px; vertical-align: top;">{{ row.document_number }}</td>
-                                            <td :title="row.matched_filename || ''" style="padding: 4px 6px; vertical-align: top; line-height: 1.35;">{{ row.document_title }}</td>
-                                            <td style="text-align: center; white-space: nowrap; padding: 4px 4px; vertical-align: top; font-size: 0.72rem;">{{ row.issue_revision_date || '—' }}</td>
-                                            <td style="text-align: center; font-weight: 700; padding: 4px 4px; vertical-align: top;">{{ row.version }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <details style="margin-top: 16px; font-size: 0.8rem; color: var(--text-muted);">
-                                <summary style="cursor: pointer; font-weight: 600; color: var(--text-main);">NAS 원본 파일 목록 (.docx)</summary>
-                                <div class="table-container" style="max-height: 280px; overflow: auto; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;">
-                                    <table style="width: 100%; font-size: 0.78rem;">
-                                        <thead style="background: #F1F5F9;">
-                                            <tr>
-                                                <th style="width: 36px;">#</th>
-                                                <th>파일명</th>
-                                                <th style="width: 48px;">R</th>
-                                                <th style="width: 130px;">수정시각</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="(doc, idx) in (selectedMiManageEntry.documents || [])" :key="'raw-' + doc.filename + idx">
-                                                <td>{{ idx + 1 }}</td>
-                                                <td style="word-break: break-all;">{{ doc.filename }}</td>
-                                                <td style="text-align: center;">{{ doc.revision != null && doc.revision !== undefined ? ('R' + doc.revision) : '—' }}</td>
-                                                <td style="white-space: nowrap;">{{ doc.modified?.replace('T', ' ') }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <p v-if="!(selectedMiManageEntry.documents || []).length" style="margin-top: 8px;">이 폴더에 .docx가 없습니다.</p>
-                            </details>
-                        </template>
-                        <template v-else>
-                            <div style="font-size: 0.85rem; color: #b91c1c;">
-                                <strong>{{ miManageFolder }}</strong> 폴더를 읽을 수 없습니다.<br>
-                                {{ selectedMiManageEntry.message || selectedMiManageEntry.error || '알 수 없는 오류' }}
-                            </div>
-                            <p v-if="selectedMiManageEntry.hint" style="margin-top: 14px; font-size: 0.8rem; color: #475569; line-height: 1.5;">
-                                {{ selectedMiManageEntry.hint }}
-                            </p>
-                            <div v-if="selectedMiManageEntry.tried_paths?.length" style="margin-top: 10px; font-size: 0.72rem; color: var(--text-muted);">
-                                <div style="font-weight: 700; margin-bottom: 4px;">시도한 경로</div>
-                                <ul style="margin: 0; padding-left: 1.2rem; word-break: break-all;">
-                                    <li v-for="(p, i) in selectedMiManageEntry.tried_paths" :key="i">{{ p }}</li>
-                                </ul>
-                            </div>
-                        </template>
+                    <div v-else-if="miLatestResult || swiLatestResult" class="mi-manage-two-col">
+                        <!-- 제조지침서 (좌) -->
+                        <div class="mi-manage-detail mi-manage-detail--mi" style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; min-width: 0;">
+                            <template v-if="!miLatestResult">
+                                <div style="font-size: 0.85rem; color: #b91c1c;">제조지침서 데이터를 불러오지 못했습니다.</div>
+                            </template>
+                            <template v-else-if="selectedMiManageEntry">
+                                <template v-if="selectedMiManageEntry.ok">
+                                    <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">표준 제조지침서 (14종)</div>
+                                    <div class="mi-catalog-table-wrap" style="overflow-x: auto; overflow-y: visible; max-height: none; border: 1px solid #86efac; border-radius: 10px;">
+                                        <table style="width: 100%; font-size: 0.76rem; border-collapse: collapse;">
+                                            <thead style="background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); color: #fff;">
+                                                <tr>
+                                                    <th style="width: 64px; text-align: center; padding: 6px 6px;">모델명</th>
+                                                    <th style="min-width: 140px; padding: 6px 6px;">문서번호</th>
+                                                    <th style="min-width: 140px; padding: 6px 6px;">문서명</th>
+                                                    <th style="width: 88px; text-align: center; white-space: nowrap; padding: 6px 4px;">제/개정일</th>
+                                                    <th style="width: 40px; text-align: center; padding: 6px 4px;">버전</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(row, idx) in (selectedMiManageEntry.catalog_rows || [])" :key="'cat-mi-' + idx"
+                                                    :style="{ background: idx % 2 === 0 ? '#f0fdf4' : '#ffffff' }">
+                                                    <td style="text-align: center; font-weight: 700; color: var(--text-main); padding: 4px 6px; vertical-align: top;">{{ row.model_name }}</td>
+                                                    <td style="word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.7rem; padding: 4px 6px; vertical-align: top;">{{ row.document_number }}</td>
+                                                    <td :title="row.matched_filename ? ('클릭: 제/개정 이력 — ' + row.matched_filename) : ''" style="padding: 4px 6px; vertical-align: top; line-height: 1.35;">
+                                                        <span
+                                                            v-if="row.matched_filename"
+                                                            class="mi-doc-title-clickable"
+                                                            role="button"
+                                                            tabindex="0"
+                                                            @click="openMiRevisionHistory(row, 'mi')"
+                                                            @keydown.enter.prevent="openMiRevisionHistory(row, 'mi')"
+                                                            @keydown.space.prevent="openMiRevisionHistory(row, 'mi')"
+                                                        >{{ row.document_title }}</span>
+                                                        <span v-else>{{ row.document_title }}</span>
+                                                    </td>
+                                                    <td style="text-align: center; white-space: nowrap; padding: 4px 4px; vertical-align: top; font-size: 0.7rem;">{{ row.issue_revision_date || '—' }}</td>
+                                                    <td style="text-align: center; font-weight: 700; padding: 4px 4px; vertical-align: top;">{{ row.version }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <details style="margin-top: 12px; font-size: 0.78rem; color: var(--text-muted);">
+                                        <summary style="cursor: pointer; font-weight: 600; color: var(--text-main);">NAS 원본 (.docx)</summary>
+                                        <div class="table-container" style="max-height: 220px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px;">
+                                            <table style="width: 100%; font-size: 0.75rem;">
+                                                <thead style="background: #F1F5F9;">
+                                                    <tr>
+                                                        <th style="width: 32px;">#</th>
+                                                        <th>파일명</th>
+                                                        <th style="width: 40px;">R</th>
+                                                        <th style="width: 120px;">수정시각</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="(doc, idx) in (selectedMiManageEntry.documents || [])" :key="'raw-mi-' + doc.filename + idx">
+                                                        <td>{{ idx + 1 }}</td>
+                                                        <td style="word-break: break-all;">{{ doc.filename }}</td>
+                                                        <td style="text-align: center;">{{ doc.revision != null && doc.revision !== undefined ? ('R' + doc.revision) : '—' }}</td>
+                                                        <td style="white-space: nowrap;">{{ doc.modified?.replace('T', ' ') }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <p v-if="!(selectedMiManageEntry.documents || []).length" style="margin-top: 8px;">이 폴더에 .docx가 없습니다.</p>
+                                    </details>
+                                </template>
+                                <template v-else>
+                                    <div style="font-size: 0.85rem; color: #b91c1c;">
+                                        <strong>제조지침서 · {{ miManageFolder }}</strong><br>
+                                        {{ selectedMiManageEntry.message || selectedMiManageEntry.error || '알 수 없는 오류' }}
+                                    </div>
+                                    <p v-if="selectedMiManageEntry.hint" style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5;">{{ selectedMiManageEntry.hint }}</p>
+                                    <div v-if="selectedMiManageEntry.tried_paths?.length" style="margin-top: 8px; font-size: 0.7rem; color: var(--text-muted);">
+                                        <div style="font-weight: 700; margin-bottom: 4px;">시도한 경로</div>
+                                        <ul style="margin: 0; padding-left: 1.2rem; word-break: break-all;">
+                                            <li v-for="(p, i) in selectedMiManageEntry.tried_paths" :key="'tm-' + i">{{ p }}</li>
+                                        </ul>
+                                    </div>
+                                </template>
+                            </template>
+                        </div>
+                        <!-- 표준작업지침서 (우) -->
+                        <div class="mi-manage-detail mi-manage-detail--swi" style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; min-width: 0;">
+                            <template v-if="!swiLatestResult">
+                                <div style="font-size: 0.85rem; color: #b91c1c;">표준작업지침서 데이터를 불러오지 못했습니다.</div>
+                            </template>
+                            <template v-else-if="selectedSwiManageEntry">
+                                <template v-if="selectedSwiManageEntry.ok">
+                                    <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">표준작업지침서 (모델당 1부)</div>
+                                    <div class="swi-catalog-table-wrap" style="overflow-x: auto; overflow-y: visible; max-height: none; border: 1px solid #93c5fd; border-radius: 10px;">
+                                        <table style="width: 100%; font-size: 0.76rem; border-collapse: collapse;">
+                                            <thead style="background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%); color: #fff;">
+                                                <tr>
+                                                    <th style="width: 64px; text-align: center; padding: 6px 6px;">모델명</th>
+                                                    <th style="min-width: 140px; padding: 6px 6px;">문서번호</th>
+                                                    <th style="min-width: 140px; padding: 6px 6px;">문서명</th>
+                                                    <th style="width: 88px; text-align: center; white-space: nowrap; padding: 6px 4px;">제/개정일</th>
+                                                    <th style="width: 40px; text-align: center; padding: 6px 4px;">버전</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(row, idx) in (selectedSwiManageEntry.catalog_rows || [])" :key="'cat-swi-' + idx"
+                                                    :style="{ background: idx % 2 === 0 ? '#eff6ff' : '#ffffff' }">
+                                                    <td style="text-align: center; font-weight: 700; color: var(--text-main); padding: 4px 6px; vertical-align: top;">{{ row.model_name }}</td>
+                                                    <td style="word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.7rem; padding: 4px 6px; vertical-align: top;">{{ row.document_number }}</td>
+                                                    <td :title="row.matched_filename ? ('클릭: 제/개정 이력 — ' + row.matched_filename) : ''" style="padding: 4px 6px; vertical-align: top; line-height: 1.35;">
+                                                        <span
+                                                            v-if="row.matched_filename"
+                                                            class="mi-doc-title-clickable mi-doc-title-clickable--swi"
+                                                            role="button"
+                                                            tabindex="0"
+                                                            @click="openMiRevisionHistory(row, 'swi')"
+                                                            @keydown.enter.prevent="openMiRevisionHistory(row, 'swi')"
+                                                            @keydown.space.prevent="openMiRevisionHistory(row, 'swi')"
+                                                        >{{ row.document_title }}</span>
+                                                        <span v-else>{{ row.document_title }}</span>
+                                                    </td>
+                                                    <td style="text-align: center; white-space: nowrap; padding: 4px 4px; vertical-align: top; font-size: 0.7rem;">{{ row.issue_revision_date || '—' }}</td>
+                                                    <td style="text-align: center; font-weight: 700; padding: 4px 4px; vertical-align: top;">{{ row.version }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <details style="margin-top: 12px; font-size: 0.78rem; color: var(--text-muted);">
+                                        <summary style="cursor: pointer; font-weight: 600; color: var(--text-main);">NAS 원본 (.docx)</summary>
+                                        <div class="table-container" style="max-height: 220px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px;">
+                                            <table style="width: 100%; font-size: 0.75rem;">
+                                                <thead style="background: #F1F5F9;">
+                                                    <tr>
+                                                        <th style="width: 32px;">#</th>
+                                                        <th>파일명</th>
+                                                        <th style="width: 52px;">R폴더</th>
+                                                        <th style="width: 120px;">수정시각</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="(doc, idx) in (selectedSwiManageEntry.documents || [])" :key="'raw-swi-' + doc.filename + idx">
+                                                        <td>{{ idx + 1 }}</td>
+                                                        <td style="word-break: break-all;">{{ doc.filename }}</td>
+                                                        <td style="text-align: center;">{{ doc.swi_r_folder != null && doc.swi_r_folder !== undefined ? ('R' + doc.swi_r_folder) : '—' }}</td>
+                                                        <td style="white-space: nowrap;">{{ doc.modified?.replace('T', ' ') }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <p v-if="!(selectedSwiManageEntry.documents || []).length" style="margin-top: 8px;">최신 R 폴더에 .docx가 없습니다.</p>
+                                    </details>
+                                </template>
+                                <template v-else>
+                                    <div style="font-size: 0.85rem; color: #b91c1c;">
+                                        <strong>표준작업지침서 · {{ miManageFolder }}</strong><br>
+                                        {{ selectedSwiManageEntry.message || selectedSwiManageEntry.error || '알 수 없는 오류' }}
+                                    </div>
+                                    <p v-if="selectedSwiManageEntry.hint" style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5;">{{ selectedSwiManageEntry.hint }}</p>
+                                    <div v-if="selectedSwiManageEntry.tried_paths?.length" style="margin-top: 8px; font-size: 0.7rem; color: var(--text-muted);">
+                                        <div style="font-weight: 700; margin-bottom: 4px;">시도한 경로</div>
+                                        <ul style="margin: 0; padding-left: 1.2rem; word-break: break-all;">
+                                            <li v-for="(p, i) in selectedSwiManageEntry.tried_paths" :key="'ts-' + i">{{ p }}</li>
+                                        </ul>
+                                    </div>
+                                </template>
+                            </template>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -673,6 +776,46 @@
     </div>
 
     <!-- Modals -->
+    <div class="modal-overlay" v-if="showMiRevisionModal" @click.self="closeMiRevisionModal">
+        <div class="modal-box" style="max-width: 920px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1rem; line-height: 1.4;">제/개정 이력 <template v-if="miRevisionMeta.kind_label">({{ miRevisionMeta.kind_label }}) </template>— {{ miRevisionMeta.document_title }}</h3>
+                <button type="button" class="btn btn-ghost" @click="closeMiRevisionModal" style="font-size:1.2rem;">✕</button>
+            </div>
+            <div class="modal-body" style="overflow: auto; max-height: min(70vh, 640px);">
+                <p v-if="miRevisionMeta.filename" style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 12px 0; word-break: break-all;">
+                    <i class="fas fa-file-word" style="margin-right: 6px;"></i>{{ miRevisionMeta.filename }}
+                </p>
+                <div v-if="miRevisionLoading" style="padding: 24px; text-align: center; color: var(--text-muted);">
+                    <i class="fas fa-spinner fa-spin"></i> 불러오는 중…
+                </div>
+                <p v-else-if="miRevisionError" style="color: #b91c1c; font-size: 0.9rem; margin: 0;">{{ miRevisionError }}</p>
+                <div v-else-if="miRevisionRows.length" class="table-container" style="overflow-x: auto;">
+                    <table class="mi-revision-table">
+                        <thead>
+                            <tr>
+                                <th class="mi-rev-no">개정 No.</th>
+                                <th class="mi-rev-date">제/개정 일자</th>
+                                <th>제/개정 내용</th>
+                                <th style="min-width: 100px;">결재</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(r, ri) in miRevisionRows" :key="'mirev-' + ri">
+                                <td class="mi-rev-no">{{ r.revision }}</td>
+                                <td class="mi-rev-date">{{ r.date }}</td>
+                                <td style="line-height: 1.45;">{{ r.content }}</td>
+                                <td style="font-size: 0.78rem; color: var(--text-muted);">{{ r.approval || '—' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border);">
+                <button type="button" class="btn btn-primary" @click="closeMiRevisionModal">닫기</button>
+            </div>
+        </div>
+    </div>
     <div class="modal-overlay" v-if="showSemiModal" @click.self="showSemiModal = false">
         <div class="modal-box">
             <div class="modal-header">
