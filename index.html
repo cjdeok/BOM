@@ -31,6 +31,9 @@
                 <div :class="['sidebar-nav-item', { active: currentTab === 'history' }]" @click="currentTab = 'history'">
                     <i class="fas fa-history"></i> <span>제조지시 기록</span>
                 </div>
+                <div :class="['sidebar-nav-item', { active: currentTab === 'mi-manage' }]" @click="currentTab = 'mi-manage'">
+                    <i class="fas fa-file-contract"></i> <span>제조지침서 관리</span>
+                </div>
             </nav>
             <div class="sidebar-footer">
                 <i class="fas fa-cog" style="margin-right:6px;"></i> Antigravity v3.0
@@ -43,7 +46,7 @@
                 <div class="breadcrumb">
                     <span>DxMe®</span>
                     <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
-                    <span class="breadcrumb-active">{{ currentTab === 'viewer' ? 'BOM 조회' : currentTab === 'upload-bom' ? '제조지시 실행' : '제조지시 기록' }}</span>
+                    <span class="breadcrumb-active">{{ breadcrumbLabel }}</span>
                 </div>
             </div>
 
@@ -389,6 +392,114 @@
                                 </p>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: 제조지침서 관리 (NAS 최신 .docx / R개정) -->
+        <div v-if="currentTab === 'mi-manage'">
+            <div class="card" style="margin-top: 10px;">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div class="section-title">
+                        <i class="fas fa-file-contract" style="color: var(--primary);"></i>
+                        <span>제조지침서 관리</span>
+                        <span class="section-subtitle" style="margin-left: 10px; font-weight: 400;">모델별 표준 14종 (문서번호·문서명·버전) + NAS 파일 매칭</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                        <button type="button" class="btn btn-outline" style="padding: 6px 16px; font-size: 0.85rem;" :disabled="miLatestLoading" @click="fetchManufacturingInstructionLatest">
+                            <i class="fas" :class="miLatestLoading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i>
+                            {{ miLatestLoading ? '불러오는 중…' : 'NAS 새로고침' }}
+                        </button>
+                        <a class="btn btn-outline" style="padding: 6px 16px; font-size: 0.85rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" href="/api/manufacturing_instruction_diag" target="_blank" rel="noopener">
+                            <i class="fas fa-stethoscope"></i> 연결 진단 (JSON)
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p v-if="miLatestError" style="color: #b91c1c; font-size: 0.85rem; margin: 0 0 16px 0;">{{ miLatestError }}</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; margin-bottom: 24px;">
+                        <div class="form-group" style="min-width: 220px; flex: 0 1 280px;">
+                            <label>구역 / 폴더 선택</label>
+                            <select v-model="miManageFolder" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); font-weight: 600; background: #FAFBFC;">
+                                <option value="BCE01">BCE01</option>
+                                <option value="BCE02">BCE02</option>
+                                <option value="BCE03">BCE03</option>
+                                <option value="BCE04">BCE04</option>
+                                <option value="BCEPP">BCE PP</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div v-if="miLatestLoading && !miLatestResult" style="color: var(--text-muted); font-size: 0.9rem;">
+                        <i class="fas fa-spinner fa-spin"></i> NAS에서 정보를 가져오는 중입니다…
+                    </div>
+                    <div v-else-if="!miLatestResult && !miLatestError" style="color: var(--text-muted); font-size: 0.85rem;">
+                        탭을 열면 자동으로 조회합니다. 수동으로 다시 읽으려면 「NAS 새로고침」을 누르세요.
+                    </div>
+                    <div v-else-if="selectedMiManageEntry" class="mi-manage-detail" style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px;">
+                        <template v-if="selectedMiManageEntry.ok">
+                            <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">표준 제조지침서 목록 (14종)</div>
+                            <div class="mi-catalog-table-wrap" style="overflow-x: auto; overflow-y: visible; max-height: none; border: 1px solid #86efac; border-radius: 10px;">
+                                <table style="width: 100%; font-size: 0.76rem; border-collapse: collapse;">
+                                    <thead style="background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%); color: #fff;">
+                                        <tr>
+                                            <th style="width: 64px; text-align: center; padding: 6px 6px;">모델명</th>
+                                            <th style="min-width: 160px; padding: 6px 6px;">문서번호</th>
+                                            <th style="min-width: 180px; padding: 6px 6px;">문서명</th>
+                                            <th style="width: 44px; text-align: center; padding: 6px 4px;">버전</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="(row, idx) in (selectedMiManageEntry.catalog_rows || [])" :key="'cat-' + idx"
+                                            :style="{ background: idx % 2 === 0 ? '#f0fdf4' : '#ffffff' }">
+                                            <td style="text-align: center; font-weight: 700; color: var(--text-main); padding: 4px 6px; vertical-align: top;">{{ row.model_name }}</td>
+                                            <td style="word-break: break-all; font-family: ui-monospace, monospace; font-size: 0.72rem; padding: 4px 6px; vertical-align: top;">{{ row.document_number }}</td>
+                                            <td :title="row.matched_filename || ''" style="padding: 4px 6px; vertical-align: top; line-height: 1.35;">{{ row.document_title }}</td>
+                                            <td style="text-align: center; font-weight: 700; padding: 4px 4px; vertical-align: top;">{{ row.version }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <details style="margin-top: 16px; font-size: 0.8rem; color: var(--text-muted);">
+                                <summary style="cursor: pointer; font-weight: 600; color: var(--text-main);">NAS 원본 파일 목록 (.docx)</summary>
+                                <div class="table-container" style="max-height: 280px; overflow: auto; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;">
+                                    <table style="width: 100%; font-size: 0.78rem;">
+                                        <thead style="background: #F1F5F9;">
+                                            <tr>
+                                                <th style="width: 36px;">#</th>
+                                                <th>파일명</th>
+                                                <th style="width: 48px;">R</th>
+                                                <th style="width: 130px;">수정시각</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(doc, idx) in (selectedMiManageEntry.documents || [])" :key="'raw-' + doc.filename + idx">
+                                                <td>{{ idx + 1 }}</td>
+                                                <td style="word-break: break-all;">{{ doc.filename }}</td>
+                                                <td style="text-align: center;">{{ doc.revision != null && doc.revision !== undefined ? ('R' + doc.revision) : '—' }}</td>
+                                                <td style="white-space: nowrap;">{{ doc.modified?.replace('T', ' ') }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p v-if="!(selectedMiManageEntry.documents || []).length" style="margin-top: 8px;">이 폴더에 .docx가 없습니다.</p>
+                            </details>
+                        </template>
+                        <template v-else>
+                            <div style="font-size: 0.85rem; color: #b91c1c;">
+                                <strong>{{ miManageFolder }}</strong> 폴더를 읽을 수 없습니다.<br>
+                                {{ selectedMiManageEntry.message || selectedMiManageEntry.error || '알 수 없는 오류' }}
+                            </div>
+                            <p v-if="selectedMiManageEntry.hint" style="margin-top: 14px; font-size: 0.8rem; color: #475569; line-height: 1.5;">
+                                {{ selectedMiManageEntry.hint }}
+                            </p>
+                            <div v-if="selectedMiManageEntry.tried_paths?.length" style="margin-top: 10px; font-size: 0.72rem; color: var(--text-muted);">
+                                <div style="font-weight: 700; margin-bottom: 4px;">시도한 경로</div>
+                                <ul style="margin: 0; padding-left: 1.2rem; word-break: break-all;">
+                                    <li v-for="(p, i) in selectedMiManageEntry.tried_paths" :key="i">{{ p }}</li>
+                                </ul>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -881,7 +992,7 @@
                                 <td style="min-width: 140px;">
                                     <input type="text" v-model="semiMgmtPerfTestDate" placeholder="YYYY-MM-DD" style="width: 100%; max-width: 160px; padding: 6px 8px; font-size: 0.85rem; border: 1px solid var(--border); border-radius: 6px;" />
                                 </td>
-                                <td style="font-weight: 600; font-family: monospace;">{{ semiMgmtPreview.nonBufferLevel1.parent_lot || '—' }}</td>
+                                <td style="font-weight: 600;">성능검사</td>
                                 <td style="text-align:right; font-weight:600;">{{ semiMgmtPreview.nonBufferPerformanceTestUsage != null ? semiMgmtPreview.nonBufferPerformanceTestUsage : '—' }}</td>
                                 <td style="text-align:right; font-weight:600;">{{ semiMgmtPreview.nonBufferInventoryAfterPerfTest != null ? semiMgmtPreview.nonBufferInventoryAfterPerfTest : '—' }}</td>
                                 <td>{{ semiMgmtPreview.nonBufferLevel1.unit || '—' }}</td>

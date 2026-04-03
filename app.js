@@ -1,4 +1,4 @@
-const { createApp, ref, computed, onMounted, reactive } = Vue;
+const { createApp, ref, computed, onMounted, reactive, watch } = Vue;
 
 createApp({
     setup() {
@@ -29,6 +29,56 @@ createApp({
             }
             openViewItems.value = newOpenItems;
         };
+
+        // =============================================
+        // NAS 제조지침서 최신본 (R개정, 온디맨드)
+        // =============================================
+        const miLatestLoading = ref(false);
+        const miLatestError = ref('');
+        const miLatestResult = ref(null);
+        const miManageFolder = ref('BCE01');
+
+        const breadcrumbLabel = computed(() => {
+            const labels = {
+                viewer: 'BOM 조회',
+                'upload-bom': '제조지시 실행',
+                history: '제조지시 기록',
+                'mi-manage': '제조지침서 관리'
+            };
+            return labels[currentTab.value] || '';
+        });
+
+        const selectedMiManageEntry = computed(() => {
+            const data = miLatestResult.value;
+            if (!data || !data.folders) return null;
+            return data.folders[miManageFolder.value] ?? null;
+        });
+
+        const fetchManufacturingInstructionLatest = async () => {
+            miLatestLoading.value = true;
+            miLatestError.value = '';
+            try {
+                const res = await fetch('/api/manufacturing_instruction_latest');
+                const data = await res.json();
+                if (!res.ok) {
+                    miLatestError.value = data.error || `HTTP ${res.status}`;
+                    miLatestResult.value = null;
+                    return;
+                }
+                miLatestResult.value = data;
+            } catch (e) {
+                miLatestError.value = String(e.message || e);
+                miLatestResult.value = null;
+            } finally {
+                miLatestLoading.value = false;
+            }
+        };
+
+        watch(currentTab, (tab) => {
+            if (tab === 'mi-manage' && !miLatestLoading.value && !miLatestResult.value) {
+                fetchManufacturingInstructionLatest();
+            }
+        });
 
         // =============================================
         // CSV Upload State
@@ -1158,12 +1208,13 @@ createApp({
         });
 
         return {
-            currentTab, loadViewerData,
+            currentTab, breadcrumbLabel, loadViewerData,
             viewData, isViewLoading, selectedViewLot, currentL0, displayL0Info, selectViewLot,
             filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
             showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
             viewDepth, setViewDepth,
             // CSV Upload Tab
+            miLatestLoading, miLatestError, miLatestResult, miManageFolder, selectedMiManageEntry, fetchManufacturingInstructionLatest,
             csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
             triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
             showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,

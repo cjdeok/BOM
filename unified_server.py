@@ -2,10 +2,11 @@ import calendar
 import sqlite3
 import pandas as pd
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from flask import Flask, jsonify, send_from_directory, request, send_file
 import os
 import io
+import subprocess
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
@@ -17,6 +18,409 @@ app = Flask(__name__, static_folder='.')
 # 디렉토리 설정
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(ROOT_DIR, 'bom.db')
+
+# NAS 제조지침서 루트
+# - MI_DOC_BASE: 우선 사용. 여러 후보는 ; 또는 | 로 구분 (예: Z:\...\제조지침서;\\NAS\...\제조지침서)
+# - 기본 순서: UNC 먼저(Z:는 서비스/IDE 터미널에서 안 보이는 경우가 많음). MI_DOC_BASE로 순서·경로 조정.
+_UNC_MI_BASE = (
+    r"\\ens-nas918\회사공유폴더\품질경영시스템 표준문서"
+    r"\ESH-7501-생산관리 절차서\지침서\제조지침서"
+)
+_Z_MI_BASE = (
+    r"Z:\회사공유폴더\품질경영시스템 표준문서"
+    r"\ESH-7501-생산관리 절차서\지침서\제조지침서"
+)
+
+
+def _mi_root_candidates():
+    """시도할 제조지침서 상위 폴더 목록 (앞쪽이 우선)."""
+    paths = []
+    env = (os.environ.get("MI_DOC_BASE") or "").strip()
+    if env:
+        for part in re.split(r"[;|\n]", env):
+            p = part.strip().strip('"').strip("'")
+            if p and p not in paths:
+                paths.append(p)
+    for p in (_UNC_MI_BASE, _Z_MI_BASE):
+        if p not in paths:
+            paths.append(p)
+    return paths
+
+
+MANUFACTURING_INSTRUCTION_SUBFOLDERS = ("BCE01", "BCE02", "BCE03", "BCE04", "BCEPP")
+_MI_FILENAME_REV_RE = re.compile(r"(?i)R(\d+)")
+
+# BCE 모델 공통: 문서번호 ESH-WS({모델})-7501-NN-Rx · 문서명 (표준 14종)
+_MANUFACTURING_INSTRUCTION_CATALOG = (
+    ("01", "PBSA Buffer 제조지침서"),
+    ("02", "Coating Buffer 제조지침서"),
+    ("03", "Washing Buffer(10x) 제조지침서"),
+    ("04", "Calibrator 제조지침서"),
+    ("05", "Positive Control 제조지침서"),
+    ("06", "Negative Control 제조지침서"),
+    ("07", "Detection Antibody 제조지침서"),
+    ("08", "Antibody Coated 96-well Plate 제조지침서"),
+    ("09", "Reagent Dilution Buffer 제조지침서"),
+    ("10", "Washing Solution(10x) 제조지침서"),
+    ("11", "TMB Solution 제조지침서"),
+    ("12", "Stop Solution 제조지침서"),
+    ("13", "라벨 출력 및 부착 제조지침서"),
+    ("14", "진단키트 포장 제조지침서"),
+)
+
+
+def _max_revision_in_filename(filename: str):
+    """파일명에 포함된 R01, R02, R3 등 표기 중 최대 개정 번호."""
+    matches = _MI_FILENAME_REV_RE.findall(filename)
+    if not matches:
+        return None
+    return max(int(m) for m in matches)
+
+
+def _file_matches_instruction_seq(filename: str, seq: str) -> bool:
+    """파일명에 7501-{seq} 문서 번호가 포함되는지 (01·12 등 인접 번호 오인 방지)."""
+    fn = filename.replace(" ", "")
+    if re.search(rf"(?<![0-9])7501-{re.escape(seq)}-R\d+", fn, re.I):
+        return True
+    if re.search(rf"(?<![0-9])7501-{re.escape(seq)}(?:\.docx|-[^R]|$)", fn, re.I):
+        return True
+    return False
+
+
+def _doc_modified_timestamp(doc: dict) -> float:
+    try:
+        s = doc.get("modified") or ""
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _build_catalog_rows(model_code: str, all_docs: list) -> list:
+    """
+    스프레드시트 형식: 모델명, 문서번호, 문서명, 버전.
+    NAS 파일명에서 7501-NN 및 R개정을 찾아 버전·문서번호를 채움.
+    """
+    rows_out = []
+    for seq, title in _MANUFACTURING_INSTRUCTION_CATALOG:
+        matches = [d for d in all_docs if _file_matches_instruction_seq(d["filename"], seq)]
+        best = None
+        for d in matches:
+            r = d.get("revision")
+            if r is None:
+                continue
+            ts = _doc_modified_timestamp(d)
+            if best is None or r > best[0] or (r == best[0] and ts > best[1]):
+                best = (r, ts, d)
+        if best is not None:
+            rev, _ts, d = best
+            rows_out.append(
+                {
+                    "model_name": model_code,
+                    "document_number": f"ESH-WS({model_code})-7501-{seq}-R{rev}",
+                    "document_title": title,
+                    "version": f"R{rev}",
+                    "matched_filename": d["filename"],
+                }
+            )
+        elif matches:
+            d = max(matches, key=_doc_modified_timestamp)
+            rows_out.append(
+                {
+                    "model_name": model_code,
+                    "document_number": f"ESH-WS({model_code})-7501-{seq}",
+                    "document_title": title,
+                    "version": "—",
+                    "matched_filename": d["filename"],
+                }
+            )
+        else:
+            rows_out.append(
+                {
+                    "model_name": model_code,
+                    "document_number": f"ESH-WS({model_code})-7501-{seq}",
+                    "document_title": title,
+                    "version": "—",
+                    "matched_filename": None,
+                }
+            )
+    return rows_out
+
+
+def _folder_work_path_and_names(folder_path: str):
+    """폴더 내 파일·폴더 이름 목록. (작업경로, 이름리스트) 또는 (None, None)."""
+    work_path = folder_path
+    names = None
+    for candidate in _win_path_access_variants(folder_path):
+        try:
+            if os.path.isdir(candidate):
+                names = os.listdir(candidate)
+                work_path = candidate
+                break
+        except OSError:
+            continue
+    if names is None and os.name == "nt":
+        names, _cmd_err = _win_dir_list_names_cmd(folder_path)
+        if names is None:
+            for candidate in list(_win_path_access_variants(folder_path))[1:]:
+                names, _cmd_err = _win_dir_list_names_cmd(candidate)
+                if names is not None:
+                    work_path = candidate
+                    break
+        else:
+            work_path = folder_path
+    if names is None:
+        return None, None
+    return work_path, names
+
+
+def _scan_all_docx_in_folder(folder_path: str):
+    """
+    폴더 내 모든 .docx 목록. R개정 없는 파일도 포함.
+    반환: (문서 dict 목록, None, None) 또는 (None, err_code, err_msg)
+    """
+    work_path, names = _folder_work_path_and_names(folder_path)
+    if names is None:
+        return None, "not_found", "폴더에 접근할 수 없거나 존재하지 않습니다."
+
+    rows = []
+    for name in names:
+        if not name.lower().endswith(".docx"):
+            continue
+        if name.startswith("~$"):
+            continue
+        full = os.path.join(work_path, name)
+        try:
+            st = os.stat(full)
+            mtime = st.st_mtime
+        except OSError:
+            continue
+        rev = _max_revision_in_filename(name)
+        rows.append(
+            {
+                "filename": name,
+                "full_path": full,
+                "revision": rev,
+                "modified": datetime.fromtimestamp(mtime).isoformat(timespec="seconds"),
+            }
+        )
+
+    def _sort_key(r):
+        rv = r["revision"]
+        return (rv is None, -(rv if rv is not None else 0), r["filename"].lower())
+
+    rows.sort(key=_sort_key)
+    return rows, None, None
+
+
+def _scan_latest_docx_by_revision(folder_path: str):
+    """
+    폴더 내 .docx 중 파일명의 R개정 번호가 가장 큰 파일을 선택.
+    동일 개정이 여러 개면 수정 시각(mtime)이 더 최근인 것을 선택.
+    """
+    work_path, names = _folder_work_path_and_names(folder_path)
+    if names is None:
+        return None, "not_found", "폴더에 접근할 수 없거나 존재하지 않습니다."
+
+    best = None  # (revision, mtime, filename, full_path)
+    for name in names:
+        if not name.lower().endswith(".docx"):
+            continue
+        if name.startswith("~$"):
+            continue
+        rev = _max_revision_in_filename(name)
+        if rev is None:
+            continue
+        full = os.path.join(work_path, name)
+        try:
+            st = os.stat(full)
+            mtime = st.st_mtime
+        except OSError:
+            continue
+        if best is None or rev > best[0] or (rev == best[0] and mtime > best[1]):
+            best = (rev, mtime, name, full)
+
+    if best is None:
+        return None, "no_matching_docx", "R개정 표기가 있는 .docx 파일이 없습니다."
+    return best, None, None
+
+
+def _win_path_access_variants(path: str):
+    """Windows에서 동일 경로에 대해 일반 경로와 \\\\?\\ 확장 경로를 순서대로 반환."""
+    path = os.path.normpath(path)
+    yield path
+    if os.name != "nt" or path.startswith("\\\\?\\"):
+        return
+    if path.startswith("\\\\"):
+        # UNC: \\server\share\... → \\?\UNC\server\share\...
+        yield "\\\\?\\UNC\\" + path[2:]
+    else:
+        # 드라이브: Z:\... → \\?\Z:\...
+        yield "\\\\?\\" + path
+
+
+def _win_dir_list_names_cmd(folder_path: str):
+    """
+    Windows: 탐색기에서는 열리지만 Python os.listdir만 실패하는 환경 대비.
+    cmd /c dir /b 로 이름만 나열 (같은 사용자 네트워크 연결을 타는 경우가 있음).
+    성공 시 (이름 목록, None), 실패 시 (None, 오류 메시지).
+    """
+    if os.name != "nt":
+        return None, "Windows 전용"
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    except (AttributeError, TypeError):
+        si = None
+    try:
+        r = subprocess.run(
+            ["cmd", "/c", "dir", "/b", folder_path],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            startupinfo=si,
+            creationflags=creationflags,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "dir 명령 시간 초과"
+    except OSError as e:
+        return None, str(e)
+    if r.returncode != 0:
+        msg = (r.stderr or r.stdout or "").strip() or f"dir 종료 코드 {r.returncode}"
+        return None, msg
+    names = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    return names, None
+
+
+def _win_dir_list_subdirs_cmd(parent_path: str):
+    """Windows: 하위 폴더 이름만 (dir /ad /b). NAS에 BCE01(96-well) 형태로 올라간 경우 구분용."""
+    if os.name != "nt":
+        return None, "Windows 전용"
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    except (AttributeError, TypeError):
+        si = None
+    try:
+        r = subprocess.run(
+            ["cmd", "/c", "dir", "/ad", "/b", parent_path],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            startupinfo=si,
+            creationflags=creationflags,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "dir /ad 시간 초과"
+    except OSError as e:
+        return None, str(e)
+    if r.returncode != 0:
+        msg = (r.stderr or r.stdout or "").strip() or f"dir 종료 코드 {r.returncode}"
+        return None, msg
+    names = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+    return names, None
+
+
+def _list_subdir_names_under_parent(parent_path: str):
+    """
+    제조지침서 루트(parent_path) 바로 아래의 하위 폴더 이름 목록.
+    반환: (작업 경로, 이름 목록) 또는 (None, None)
+    """
+    for candidate in _win_path_access_variants(parent_path):
+        try:
+            if not os.path.isdir(candidate):
+                continue
+            out = []
+            for n in os.listdir(candidate):
+                try:
+                    if os.path.isdir(os.path.join(candidate, n)):
+                        out.append(n)
+                except OSError:
+                    continue
+            return candidate, out
+        except OSError:
+            continue
+    if os.name == "nt":
+        for path_try in _win_path_access_variants(parent_path):
+            names, err = _win_dir_list_subdirs_cmd(path_try)
+            if names is not None:
+                return path_try, names
+    return None, None
+
+
+def _pick_mi_child_folder_path(parent_work: str, child_names: list, sub_codes: str):
+    """
+    sub_codes: BCE01 등 UI 코드.
+    NAS 실제 폴더명이 BCE01(96-well), BCEPP(PP) 인 경우 매칭.
+    반환: 자식 폴더 절대 경로 또는 None
+    """
+    if not child_names:
+        return None
+    if sub_codes in child_names:
+        return os.path.join(parent_work, sub_codes)
+    paren = [n for n in child_names if n.startswith(sub_codes + "(")]
+    if len(paren) == 1:
+        return os.path.join(parent_work, paren[0])
+    if len(paren) > 1:
+        paren.sort(key=len)
+        return os.path.join(parent_work, paren[0])
+    loose = [n for n in child_names if n.startswith(sub_codes)]
+    if loose:
+        loose.sort(key=len)
+        return os.path.join(parent_work, loose[0])
+    return None
+
+
+def _resolve_mi_subfolder(sub: str):
+    """
+    BCE01 등 하위 폴더에 대해, 후보 루트 중 첫 번째로 존재·접근 가능한 경로를 반환.
+    반환: (folder_path 또는 None, 사용된 루트 또는 None, 시도한 전체 하위 경로 목록)
+    """
+    tried = []
+    for root in _mi_root_candidates():
+        folder = os.path.normpath(os.path.join(root, sub))
+        tried.append(folder)
+        for candidate in _win_path_access_variants(folder):
+            try:
+                if os.path.isdir(candidate):
+                    return candidate, root, tried
+            except OSError:
+                continue
+        if os.name == "nt":
+            names, _err = _win_dir_list_names_cmd(folder)
+            if names is not None:
+                return folder, root, tried
+            for candidate in list(_win_path_access_variants(folder))[1:]:
+                names, _err = _win_dir_list_names_cmd(candidate)
+                if names is not None:
+                    return candidate, root, tried
+
+        parent_work, subnames = _list_subdir_names_under_parent(root)
+        if parent_work and subnames:
+            matched = _pick_mi_child_folder_path(parent_work, subnames, sub)
+            if matched:
+                tried.append(matched)
+                for candidate in _win_path_access_variants(matched):
+                    try:
+                        if os.path.isdir(candidate):
+                            return candidate, root, tried
+                    except OSError:
+                        continue
+                if os.name == "nt":
+                    n2, _e2 = _win_dir_list_names_cmd(matched)
+                    if n2 is not None:
+                        return os.path.normpath(matched), root, tried
+                    for candidate in list(_win_path_access_variants(matched))[1:]:
+                        n2, _e2 = _win_dir_list_names_cmd(candidate)
+                        if n2 is not None:
+                            return candidate, root, tried
+    return None, None, tried
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -35,6 +439,112 @@ def serve_css():
 @app.route('/app.js')
 def serve_js():
     return send_from_directory('.', 'app.js')
+
+
+@app.route('/api/manufacturing_instruction_latest')
+def api_manufacturing_instruction_latest():
+    """BCE01~BCEPP 각 폴더에서 파일명 R개정이 가장 큰 .docx 1개씩 조회 (버튼/온디맨드용)."""
+    roots = _mi_root_candidates()
+    out = {
+        "base": roots[0] if roots else "",
+        "roots_tried": roots,
+        "folders": {},
+    }
+    _not_found_hint = (
+        "탐색기에서는 열리는데 여기서만 안 될 때: 서버는 Windows에서 cmd dir로 목록을 한 번 더 시도합니다. "
+        "그래도 실패하면 PC를 재로그온한 뒤, 바탕화면의 'cmd'에서 프로젝트 폴더로 이동해 python unified_server.py 로 실행해 보세요 "
+        "(Cursor 터미널과 동일 사용자여도 드라이브 핸들이 다를 수 있습니다). "
+        "MI_DOC_BASE로 탐색기 주소줄 경로를 지정할 수도 있습니다."
+    )
+    for sub in MANUFACTURING_INSTRUCTION_SUBFOLDERS:
+        folder, used_root, tried = _resolve_mi_subfolder(sub)
+        if folder is None:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": "not_found",
+                "message": "폴더에 접근할 수 없거나 존재하지 않습니다.",
+                "folder_path": tried[-1] if tried else sub,
+                "tried_paths": tried,
+                "hint": _not_found_hint,
+            }
+            continue
+        all_docs, _ad_err, _ad_msg = _scan_all_docx_in_folder(folder)
+        if all_docs is None:
+            out["folders"][sub] = {
+                "ok": False,
+                "error": _ad_err,
+                "message": _ad_msg,
+                "folder_path": folder,
+                "resolved_base": used_root,
+                "tried_paths": tried,
+            }
+            continue
+
+        best, err_code, err_msg = _scan_latest_docx_by_revision(folder)
+        catalog_rows = _build_catalog_rows(sub, all_docs)
+        payload = {
+            "ok": True,
+            "folder_path": folder,
+            "resolved_base": used_root,
+            "nas_folder_name": os.path.basename(folder),
+            "catalog_rows": catalog_rows,
+            "documents": all_docs,
+            "documents_count": len(all_docs),
+            "tried_paths": tried,
+        }
+        if best is not None:
+            rev, mtime, name, full = best
+            payload["revision"] = rev
+            payload["filename"] = name
+            payload["full_path"] = full
+            payload["modified"] = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            for d in all_docs:
+                d["is_latest_in_folder"] = d["filename"] == name and d.get("full_path") == full
+        else:
+            payload["revision"] = None
+            payload["filename"] = None
+            payload["full_path"] = None
+            payload["modified"] = None
+            payload["latest_note"] = err_msg or "R개정이 있는 최신본 없음"
+            for d in all_docs:
+                d["is_latest_in_folder"] = False
+        out["folders"][sub] = payload
+    return jsonify(out)
+
+
+@app.route("/api/manufacturing_instruction_diag")
+def api_manufacturing_instruction_diag():
+    """탐색기와 달리 Python이 Z:/UNC를 못 볼 때 원인 확인용 (브라우저에서 직접 호출 가능)."""
+    import ctypes
+
+    out = {"z_drive_type": None, "z_drive_label": None, "roots": []}
+    if os.name == "nt":
+        try:
+            t = ctypes.windll.kernel32.GetDriveTypeW("Z:\\")
+            labels = {0: "UNKNOWN", 1: "NO_ROOT", 2: "REMOVABLE", 3: "FIXED", 4: "REMOTE", 5: "CDROM", 6: "RAMDISK"}
+            out["z_drive_type"] = t
+            out["z_drive_label"] = labels.get(t, str(t))
+        except Exception as e:
+            out["z_drive_error"] = str(e)
+    for root in _mi_root_candidates():
+        row = {"root": root}
+        try:
+            row["python_isdir"] = os.path.isdir(root)
+        except OSError as e:
+            row["python_isdir"] = None
+            row["python_isdir_error"] = str(e)
+        if os.name == "nt":
+            names, err = _win_dir_list_names_cmd(root)
+            row["cmd_dir_ok"] = names is not None
+            row["cmd_dir_error"] = err if names is None else None
+            if names:
+                row["cmd_sample_names"] = sorted(names)[:30]
+            _pw, subonly = _list_subdir_names_under_parent(root)
+            if subonly:
+                row["subfolders_bce_match"] = sorted(subonly)[:30]
+        out["roots"].append(row)
+    return jsonify(out)
+
 
 # --- BOM 조회 (Viewer) API ---
 @app.route('/api/bom-all')
@@ -357,10 +867,13 @@ def _semi_mgmt_clear_range_b12_ad30(ws):
             _write_cell_safe(ws, f'{get_column_letter(col)}{row}', None)
 
 
+SEMI_MGMT_FIRST_USAGE_PURPOSE = '성능검사'
+
+
 def _semi_mgmt_write_usage_history(ws, preview, perf_test_date):
     """
     사용이력 12행부터: B=사용일자, H=사용목적, R=사용량, V=재고량, T·X=단위(동일 값).
-    버퍼: level2 사용 이력 행만. 비버퍼: 성능검사 1행(목적=상위 Lot) + level1 이력 행.
+    버퍼(PB/CB/WB): level2 사용 이력만(상위 Lot=사용목적, 기존과 동일). 비버퍼: 1행 H=성능검사 + level1 이력 행.
     """
     row = 12
     max_row = 30
@@ -393,10 +906,9 @@ def _semi_mgmt_write_usage_history(ws, preview, perf_test_date):
     nb = preview.get('nonBufferLevel1')
     if not nb:
         return
-    parent_lot_disp = str(nb.get('parent_lot') or '').strip()
     _write_row(
         (perf_test_date or '').strip() or None,
-        parent_lot_disp or None,
+        SEMI_MGMT_FIRST_USAGE_PURPOSE,
         preview.get('nonBufferPerformanceTestUsage'),
         preview.get('nonBufferInventoryAfterPerfTest'),
         nb.get('unit') or preview.get('M7') or '',
@@ -1312,4 +1824,6 @@ def save_instruction():
 
 if __name__ == '__main__':
     print("--- Unified BOM System Server Starting ---")
-    app.run(host='0.0.0.0', port=9000, debug=True)
+    # Windows: debug 리로더 자식 프로세스에서 Z: 등 네트워크 드라이브가 사라지는 경우가 있어 기본 비활성화.
+    _reload = os.environ.get("BOM_USE_RELOADER", "").strip().lower() in ("1", "true", "yes", "y")
+    app.run(host="0.0.0.0", port=9000, debug=True, use_reloader=_reload)
