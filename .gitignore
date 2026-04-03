@@ -28,3 +28,7 @@ tmp/
 
 # Project backups and generated files
 .old/
+
+# Local run logs and scratch output
+*.log
+test_out.txt
