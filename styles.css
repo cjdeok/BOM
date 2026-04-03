@@ -343,6 +343,23 @@ tr:last-child td { border-bottom: none; }
     outline: 2px solid #2563eb;
     outline-offset: 2px;
 }
+.mi-doc-title-clickable--qmpc {
+    color: #c2410c;
+}
+.mi-doc-title-clickable--qmpc:focus {
+    outline: 2px solid #ea580c;
+    outline-offset: 2px;
+}
+.mi-revision-table--grid th,
+.mi-revision-table--grid td {
+    border: 1px solid #E5E7EB;
+    padding: 6px 8px;
+    text-align: left;
+}
+.mi-revision-table--grid thead th {
+    background: #FFF7ED;
+    font-weight: 700;
+}
 
 .mi-manage-two-col {
     display: grid;
@@ -350,11 +367,35 @@ tr:last-child td { border-bottom: none; }
     gap: 20px;
     align-items: start;
 }
+.mi-manage-right-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+.mi-manage-qmpc {
+    background: #FFFBF5;
+    border: 1px solid #fed7aa;
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 0;
+}
 @media (max-width: 1100px) {
     .mi-manage-two-col {
         grid-template-columns: 1fr;
     }
 }
+/* 표준작업 NAS 원본 표: R폴더 헤더 줄바꿈 방지 */
+.swi-nas-th-rfolder {
+    width: 58px;
+    min-width: 58px;
+    max-width: 72px;
+    white-space: nowrap;
+    text-align: center;
+    padding: 6px 6px;
+    vertical-align: middle;
+}
+
 .mi-revision-table {
     width: 100%;
     border-collapse: collapse;

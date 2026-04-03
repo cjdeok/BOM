@@ -38,6 +38,8 @@ createApp({
         const miLatestResult = ref(null);
         const swiLatestError = ref('');
         const swiLatestResult = ref(null);
+        const qmpcLatestError = ref('');
+        const qmpcLatestResult = ref(null);
         const miManageFolder = ref('BCE01');
 
         const breadcrumbLabel = computed(() => {
@@ -62,17 +64,26 @@ createApp({
             return data.folders[miManageFolder.value] ?? null;
         });
 
+        const selectedQmpcManageEntry = computed(() => {
+            const data = qmpcLatestResult.value;
+            if (!data || !data.folders) return null;
+            return data.folders[miManageFolder.value] ?? null;
+        });
+
         const fetchManufacturingInstructionLatest = async () => {
             miLatestLoading.value = true;
             miLatestError.value = '';
             swiLatestError.value = '';
+            qmpcLatestError.value = '';
             try {
-                const [r1, r2] = await Promise.all([
+                const [r1, r2, r3] = await Promise.all([
                     fetch('/api/manufacturing_instruction_latest'),
-                    fetch('/api/standard_work_instruction_latest')
+                    fetch('/api/standard_work_instruction_latest'),
+                    fetch('/api/qmpc_latest')
                 ]);
                 const d1 = await r1.json();
                 const d2 = await r2.json();
+                const d3 = await r3.json();
                 if (!r1.ok) {
                     miLatestError.value = d1.error || d1.message || `HTTP ${r1.status}`;
                     miLatestResult.value = null;
@@ -85,12 +96,20 @@ createApp({
                 } else {
                     swiLatestResult.value = d2;
                 }
+                if (!r3.ok) {
+                    qmpcLatestError.value = d3.error || d3.message || `HTTP ${r3.status}`;
+                    qmpcLatestResult.value = null;
+                } else {
+                    qmpcLatestResult.value = d3;
+                }
             } catch (e) {
                 const msg = String(e.message || e);
                 miLatestError.value = msg;
                 swiLatestError.value = msg;
+                qmpcLatestError.value = msg;
                 miLatestResult.value = null;
                 swiLatestResult.value = null;
+                qmpcLatestResult.value = null;
             } finally {
                 miLatestLoading.value = false;
             }
@@ -101,7 +120,8 @@ createApp({
                 tab === 'mi-manage' &&
                 !miLatestLoading.value &&
                 !miLatestResult.value &&
-                !swiLatestResult.value
+                !swiLatestResult.value &&
+                !qmpcLatestResult.value
             ) {
                 fetchManufacturingInstructionLatest();
             }
@@ -110,22 +130,29 @@ createApp({
         const showMiRevisionModal = ref(false);
         const miRevisionLoading = ref(false);
         const miRevisionError = ref('');
-        const miRevisionMeta = ref({ document_title: '', filename: '' });
+        const miRevisionMeta = ref({ document_title: '', filename: '', kind_label: '', sheet_label: '' });
         const miRevisionRows = ref([]);
+        const miRevisionView = ref('legacy');
+        const miRevisionGrid = ref({ headers: [], rows: [] });
 
         const closeMiRevisionModal = () => {
             showMiRevisionModal.value = false;
             miRevisionError.value = '';
             miRevisionRows.value = [];
-            miRevisionMeta.value = { document_title: '', filename: '', kind_label: '' };
+            miRevisionView.value = 'legacy';
+            miRevisionGrid.value = { headers: [], rows: [] };
+            miRevisionMeta.value = { document_title: '', filename: '', kind_label: '', sheet_label: '' };
         };
 
         const openMiRevisionHistory = async (row, source = 'mi') => {
             if (!row || !row.matched_filename) return;
+            miRevisionView.value = 'legacy';
+            miRevisionGrid.value = { headers: [], rows: [] };
             miRevisionMeta.value = {
                 document_title: row.document_title || '',
                 filename: row.matched_filename || '',
-                kind_label: source === 'swi' ? '표준작업지침서' : '제조지침서'
+                kind_label: source === 'swi' ? '표준작업지침서' : '제조지침서',
+                sheet_label: ''
             };
             miRevisionRows.value = [];
             miRevisionError.value = '';
@@ -149,6 +176,48 @@ createApp({
                 miRevisionRows.value = Array.isArray(data.rows) ? data.rows : [];
                 if (!miRevisionRows.value.length) {
                     miRevisionError.value = '개정 이력 표에서 데이터 행을 찾지 못했습니다.';
+                }
+            } catch (e) {
+                miRevisionError.value = String(e.message || e);
+            } finally {
+                miRevisionLoading.value = false;
+            }
+        };
+
+        const openQmpcRevisionHistory = async (row) => {
+            if (!row || !row.matched_filename) return;
+            miRevisionView.value = 'grid';
+            miRevisionRows.value = [];
+            miRevisionGrid.value = { headers: [], rows: [] };
+            miRevisionMeta.value = {
+                document_title: row.document_title || '',
+                filename: row.matched_filename || '',
+                kind_label: '품질관리 공정도',
+                sheet_label: ''
+            };
+            miRevisionError.value = '';
+            showMiRevisionModal.value = true;
+            miRevisionLoading.value = true;
+            const q = new URLSearchParams({
+                folder: miManageFolder.value,
+                filename: row.matched_filename
+            });
+            try {
+                const res = await fetch(`/api/qmpc_revision_history?${q}`);
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    miRevisionError.value = data.message || data.error || `HTTP ${res.status}`;
+                    return;
+                }
+                miRevisionMeta.value.sheet_label = data.sheet_name || '';
+                miRevisionGrid.value = {
+                    headers: Array.isArray(data.headers) ? data.headers : [],
+                    rows: Array.isArray(data.rows) ? data.rows : []
+                };
+                const hasHeader = miRevisionGrid.value.headers.some((h) => String(h || '').trim());
+                const hasRows = miRevisionGrid.value.rows.length > 0;
+                if (!hasHeader && !hasRows) {
+                    miRevisionError.value = '개정 이력 시트에서 데이터를 찾지 못했습니다.';
                 }
             } catch (e) {
                 miRevisionError.value = String(e.message || e);
@@ -1292,9 +1361,12 @@ createApp({
             viewDepth, setViewDepth,
             // CSV Upload Tab
             miLatestLoading, miLatestError, miLatestResult, swiLatestError, swiLatestResult,
-            miManageFolder, selectedMiManageEntry, selectedSwiManageEntry, fetchManufacturingInstructionLatest,
+            qmpcLatestError, qmpcLatestResult,
+            miManageFolder, selectedMiManageEntry, selectedSwiManageEntry, selectedQmpcManageEntry,
+            fetchManufacturingInstructionLatest,
             showMiRevisionModal, miRevisionLoading, miRevisionError, miRevisionMeta, miRevisionRows,
-            openMiRevisionHistory, closeMiRevisionModal,
+            miRevisionView, miRevisionGrid,
+            openMiRevisionHistory, openQmpcRevisionHistory, closeMiRevisionModal,
             csvRows, csvFileName, isDragOver, csvInput, csvLevel0, csvFiltered, csvByLevel, csvByLevelGrouped,
             triggerCsvInput, handleCsvDrop, handleCsvFile, resetCsv, downloadCsvResult, isExpiryNear,
             showSemiLotModal, semiLotList, openSemiLotModal, onSemiMfgDateChange, applySemiLots,

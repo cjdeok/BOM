@@ -44,6 +44,26 @@ _Z_SWI_BASE = (
     r"\표준서\ESH-DHF-BCE-SOP-01 표준작업지침서"
 )
 
+# NAS 품질관리 공정도
+# 실제 NAS: 공정도 루트 바로 아래 R0/R1/R2 및 모델명이 파일명에 포함된 xlsx (BCE01 하위 폴더 없음인 경우 많음)
+# - QMPC_DOC_BASE: MI/SWI 와 동일하게 ; 로 여러 후보 지정 가능
+_UNC_QMPC_BASE = (
+    r"\\ens-nas918\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-PC-BCE-01 품질관리 공정도"
+)
+_UNC_QMPC_BASE_ALT = (
+    r"\\ens-nas918\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-PC-BCE01 품질관리 공정도"
+)
+_Z_QMPC_BASE = (
+    r"Z:\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-PC-BCE-01 품질관리 공정도"
+)
+_Z_QMPC_BASE_ALT = (
+    r"Z:\회사공유폴더\회사공유폴더\품질경영시스템 표준문서"
+    r"\표준서\ESH-PC-BCE01 품질관리 공정도"
+)
+
 
 def _mi_root_candidates():
     """시도할 제조지침서 상위 폴더 목록 (앞쪽이 우선)."""
@@ -70,6 +90,21 @@ def _swi_root_candidates():
             if p and p not in paths:
                 paths.append(p)
     for p in (_UNC_SWI_BASE, _Z_SWI_BASE):
+        if p not in paths:
+            paths.append(p)
+    return paths
+
+
+def _qmpc_root_candidates():
+    """품질관리 공정도 상위 폴더 후보."""
+    paths = []
+    env = (os.environ.get("QMPC_DOC_BASE") or "").strip()
+    if env:
+        for part in re.split(r"[;|\n]", env):
+            p = part.strip().strip('"').strip("'")
+            if p and p not in paths:
+                paths.append(p)
+    for p in (_UNC_QMPC_BASE, _UNC_QMPC_BASE_ALT, _Z_QMPC_BASE, _Z_QMPC_BASE_ALT):
         if p not in paths:
             paths.append(p)
     return paths
@@ -575,6 +610,75 @@ def _safe_swi_docx_path(folder_key: str, filename: str) -> str | None:
     return None
 
 
+def _safe_qmpc_xlsx_path(folder_key: str, filename: str) -> str | None:
+    """품질관리 공정도: 레거시 BCE01/R* 경로 또는 공정도 루트·R* 평면 구조에서 파일 검증."""
+    if not filename or not folder_key:
+        return None
+    fn = filename.strip()
+    if not fn or os.path.basename(fn) != fn or "/" in fn or "\\" in fn:
+        return None
+    low = fn.lower()
+    if not (low.endswith(".xlsx") or low.endswith(".xlsm")) or fn.startswith("~$"):
+        return None
+    roots = _qmpc_root_candidates()
+
+    def _is_file_under(child: str, parent: str) -> bool:
+        child_n = os.path.normpath(child)
+        parent_n = os.path.normpath(parent)
+        try:
+            return os.path.commonpath([child_n, parent_n]) == parent_n
+        except ValueError:
+            return False
+
+    def try_under(parent: str, scope: str, require_model_match: bool) -> str | None:
+        full = os.path.normpath(os.path.join(parent, fn))
+        if not _is_file_under(full, scope) or not os.path.isfile(full):
+            return None
+        if require_model_match and not _qmpc_filename_matches_model(fn, folder_key):
+            return None
+        return full
+
+    folder_path, _, _ = _resolve_instruction_subfolder(folder_key, roots)
+    if folder_path:
+        p = try_under(folder_path, folder_path, False)
+        if p:
+            return p
+        r_path, _ = _swi_latest_r_folder_path(folder_path)
+        if r_path:
+            p = try_under(r_path, folder_path, False)
+            if p:
+                return p
+        work, names = _folder_work_path_and_names(folder_path)
+        if work and names:
+            r_dirs: list[tuple[int, str]] = []
+            for name in names:
+                m = _SWI_R_SUBDIR_RE.match(name.strip())
+                if not m:
+                    continue
+                cand = os.path.join(work, name)
+                try:
+                    if os.path.isdir(cand):
+                        r_dirs.append((int(m.group(1)), cand))
+                except OSError:
+                    continue
+            r_dirs.sort(key=lambda x: -x[0])
+            for _rev, rp in r_dirs:
+                p = try_under(rp, folder_path, False)
+                if p:
+                    return p
+
+    for root in roots:
+        base, _ = _qmpc_accessible_base(root)
+        if not base:
+            continue
+        r_path, _ = _swi_latest_r_folder_path(base)
+        for parent in [x for x in (r_path, base) if x]:
+            p = try_under(parent, base, True)
+            if p:
+                return p
+    return None
+
+
 def _issued_date_from_revision_table(xml_bytes: bytes) -> str | None:
     """
     document.xml에서「제/개정 일자」열이 있는 개정 이력 표를 모두 찾아,
@@ -851,6 +955,322 @@ def _scan_all_docx_in_folder(folder_path: str):
 
     rows.sort(key=_sort_key)
     return rows, None, None
+
+
+def _scan_all_xlsx_in_folder(folder_path: str):
+    """폴더 내 .xlsx / .xlsm 목록 (~$ 잠금 파일 제외)."""
+    work_path, names = _folder_work_path_and_names(folder_path)
+    if names is None:
+        return None, "not_found", "폴더에 접근할 수 없거나 존재하지 않습니다."
+
+    rows = []
+    for name in names:
+        low = name.lower()
+        if not (low.endswith(".xlsx") or low.endswith(".xlsm")):
+            continue
+        if name.startswith("~$"):
+            continue
+        full = os.path.join(work_path, name)
+        try:
+            st = os.stat(full)
+            mtime = st.st_mtime
+        except OSError:
+            continue
+        rev = _max_revision_in_filename(name)
+        rows.append(
+            {
+                "filename": name,
+                "full_path": full,
+                "revision": rev,
+                "modified": datetime.fromtimestamp(mtime).isoformat(timespec="seconds"),
+            }
+        )
+
+    def _sort_key_x(r):
+        rv = r["revision"]
+        return (rv is None, -(rv if rv is not None else 0), r["filename"].lower())
+
+    rows.sort(key=_sort_key_x)
+    return rows, None, None
+
+
+def _xlsx_cell_str(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        if v.hour == 0 and v.minute == 0 and v.second == 0:
+            return v.strftime("%Y-%m-%d")
+        return v.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(v, date):
+        return v.isoformat()
+    t = str(v).strip()
+    return t
+
+
+def _qmpc_sheet_has_revision_history(ws) -> bool:
+    """시트 상단~중단에 '문서 개정 이력' 또는 개정/일자 열이 있는지."""
+    blob = ""
+    n = 0
+    for row in ws.iter_rows(values_only=True, max_row=85):
+        parts = [_xlsx_cell_str(c) for c in row]
+        if not any(p.strip() for p in parts):
+            continue
+        blob += " ".join(parts) + " "
+        n += 1
+        if n > 60:
+            break
+    b = blob.replace(" ", "")
+    if "문서개정이력" in b:
+        return True
+    if "개정" in blob and ("일자" in blob or "제/개정" in blob):
+        return True
+    return False
+
+
+def _qmpc_pick_revision_sheet_index(wb) -> int | None:
+    """Sheet1(첫 탭) 우선 — 개정 이력 표가 있는 첫 시트(최대 앞쪽 8개 탭 검사)."""
+    names = list(wb.sheetnames)
+    for idx in range(min(8, len(names))):
+        try:
+            if _qmpc_sheet_has_revision_history(wb[names[idx]]):
+                return idx
+        except Exception:
+            continue
+    return None
+
+
+def _row_looks_like_qmpc_revision_header(cells: list[str]) -> bool:
+    """표 제목 행(문서 개정 이력만 있는 행)이 아닌, 열 헤더 행."""
+    if not cells or not any(c.strip() for c in cells):
+        return False
+    joined_ns = "".join(cells).replace(" ", "").replace("\n", "")
+    if "문서개정이력" in joined_ns and len([c for c in cells if c.strip()]) <= 2:
+        return False
+    has_rev = any(
+        "개정" in c and ("no" in c.lower() or "번호" in c or "No." in c)
+        for c in cells
+    )
+    has_date = any("일자" in c or "제/개정" in c for c in cells)
+    return has_rev and has_date
+
+
+def _qmpc_raw_nonempty_rows_from_ws(ws) -> list[list[str]]:
+    raw_rows: list[list[str]] = []
+    for row in ws.iter_rows(values_only=True):
+        cells = [_xlsx_cell_str(c) for c in row]
+        if not any(x.strip() for x in cells):
+            continue
+        raw_rows.append(cells)
+    return raw_rows
+
+
+def _qmpc_headers_and_body_from_raw(raw_rows: list[list[str]]) -> tuple[list[str], list[list[str]]]:
+    """표 위에 표지·제목 행이 있어도 '개정 No / 제·개정 일자' 헤더 행을 찾음."""
+    if not raw_rows:
+        return [], []
+    hi = None
+    for i, row in enumerate(raw_rows):
+        if _row_looks_like_qmpc_revision_header(row):
+            hi = i
+            break
+    if hi is None:
+        hi = 0
+    header_row = raw_rows[hi]
+    body_slice = raw_rows[hi + 1 :]
+    max_len = max(
+        [len(header_row)] + [len(r) for r in body_slice],
+        default=len(header_row),
+    )
+    headers = header_row + [""] * (max_len - len(header_row))
+    body = [r + [""] * (max_len - len(r)) for r in body_slice]
+    return headers, body
+
+
+def _xlsx_qmpc_revision_history_grid(path: str) -> dict:
+    """
+    개정 이력이 있는 시트(통상 Sheet1, 일부 서식은 2번째 탭)를 그리드로 읽음.
+    """
+    out: dict = {"headers": [], "rows": [], "sheet_name": "", "error": None}
+    if not path or not os.path.isfile(path):
+        out["error"] = "not_found"
+        return out
+    wb = None
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except Exception as e:
+        out["error"] = f"load_error:{e}"
+        return out
+    try:
+        names = list(wb.sheetnames)
+        idx = _qmpc_pick_revision_sheet_index(wb)
+        if idx is None:
+            out["error"] = "revision_sheet_not_found"
+            return out
+        sn = names[idx]
+        out["sheet_name"] = sn
+        ws = wb[sn]
+        raw_rows = _qmpc_raw_nonempty_rows_from_ws(ws)
+        if not raw_rows:
+            return out
+        headers, body = _qmpc_headers_and_body_from_raw(raw_rows)
+        out["headers"] = headers
+        out["rows"] = body
+        return out
+    finally:
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
+
+
+# 하위 호환: 기존 이름 유지
+def _xlsx_second_sheet_revision_grid(path: str) -> dict:
+    return _xlsx_qmpc_revision_history_grid(path)
+
+
+# 품질관리 공정도 표지/본문 셀에서 추출 (예: ESH-PC-BCE01-01-R2, BCEPP)
+_QMPC_DOCNO_RE = re.compile(
+    r"ESH-PC-BCE(?:\d{2}|PP)(?:-[A-Za-z0-9]+)*",
+    re.IGNORECASE,
+)
+
+
+def _flexible_qmpc_date_to_iso(v) -> str | None:
+    """엑셀 개정 이력 일자 → YYYY-MM-DD."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    s = str(v).strip()
+    if not s:
+        return None
+    m = re.match(
+        r"(\d{4})\s*[\.\-\/년]?\s*(\d{1,2})\s*[\.\-\/월]?\s*(\d{1,2})",
+        s,
+    )
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(y, mo, d).isoformat()
+        except ValueError:
+            return None
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return None
+
+
+def _qmpc_parse_revision_cell(v) -> int | None:
+    t = _xlsx_cell_str(v).strip()
+    if not t:
+        return None
+    m = re.match(r"R\s*(\d+)\s*$", t, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    if t.isdigit():
+        return int(t)
+    m2 = re.search(r"(\d+)", t)
+    if m2:
+        return int(m2.group(1))
+    return None
+
+
+def _qmpc_revision_latest_from_grid(headers: list, rows: list) -> tuple[int | None, str | None]:
+    """개정 이력 표에서 최대 개정 번호와 그 행의 제/개정 일자."""
+    if not headers or not rows:
+        return None, None
+    h = [(x or "").replace("\n", " ").strip() for x in headers]
+    rev_i = None
+    date_i = None
+    for i, cell in enumerate(h):
+        c = (cell or "").replace(" ", "")
+        if "개정" in c and ("no" in c.lower() or "번호" in c):
+            rev_i = i
+        if "일자" in (cell or "") or "제/개정" in (cell or ""):
+            date_i = i
+    if rev_i is None:
+        rev_i = 0
+    if date_i is None:
+        for i, cell in enumerate(h):
+            if "일자" in (cell or ""):
+                date_i = i
+                break
+        if date_i is None and len(h) > 1:
+            date_i = 1
+    best_rev = -1
+    best_date: str | None = None
+    for row in rows:
+        if not row or rev_i >= len(row):
+            continue
+        rv = _qmpc_parse_revision_cell(row[rev_i])
+        if rv is None:
+            continue
+        ds = row[date_i] if date_i is not None and date_i < len(row) else ""
+        dt = _flexible_qmpc_date_to_iso(ds)
+        if rv > best_rev:
+            best_rev = rv
+            best_date = dt
+        elif rv == best_rev and dt is not None:
+            best_date = dt
+    if best_rev < 0:
+        return None, None
+    return best_rev, best_date
+
+
+def _qmpc_meta_from_xlsx(path: str) -> dict:
+    """
+    공정도 xlsx: 표지 등에서 문서번호(ESH-PC-…), 개정 이력 시트(Sheet1 우선)에서 최신 제/개정일·개정번호.
+    제/개정일은 NAS 파일 수정일과 무관하게 표 데이터만 사용.
+    """
+    out: dict = {
+        "document_number": None,
+        "latest_revision_date": None,
+        "latest_revision_no": None,
+        "sheet_revision_name": None,
+    }
+    if not path or not os.path.isfile(path):
+        return out
+    wb = None
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except Exception:
+        return out
+    try:
+        names = list(wb.sheetnames)
+        candidates: list[str] = []
+        for idx in (0, 1, 2):
+            if idx >= len(names):
+                break
+            ws = wb[names[idx]]
+            for row in ws.iter_rows(values_only=True, max_row=45):
+                for c in row:
+                    t = _xlsx_cell_str(c)
+                    for m in _QMPC_DOCNO_RE.finditer(t):
+                        candidates.append(m.group(0))
+        if candidates:
+            out["document_number"] = max(candidates, key=len)
+        idx = _qmpc_pick_revision_sheet_index(wb)
+        if idx is None:
+            return out
+        sn = names[idx]
+        out["sheet_revision_name"] = sn
+        ws = wb[sn]
+        raw_rows = _qmpc_raw_nonempty_rows_from_ws(ws)
+        if not raw_rows:
+            return out
+        hdr, body = _qmpc_headers_and_body_from_raw(raw_rows)
+        rev_no, rev_date = _qmpc_revision_latest_from_grid(hdr, body)
+        out["latest_revision_no"] = rev_no
+        out["latest_revision_date"] = rev_date
+        return out
+    finally:
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
 
 
 def _scan_latest_docx_by_revision(folder_path: str):
@@ -1169,15 +1589,40 @@ def _instruction_latest_payload(roots: list, catalog: tuple, env_hint_name: str)
     return out
 
 
+def _iso_datetime_to_yyyy_mm_dd(s: str) -> str:
+    """API/목록용: ISO datetime 문자열 → YYYY-MM-DD."""
+    if not s or not isinstance(s, str):
+        return ""
+    t = s.strip().replace("Z", "+00:00")
+    if "T" in t:
+        return t.split("T", 1)[0][:10]
+    if len(t) >= 10 and t[4] == "-" and t[7] == "-":
+        return t[:10]
+    return t
+
+
+def _swi_document_number_prefix_from_filename(filename: str) -> str | None:
+    """NAS 원본명 첫 '_' 앞 접두 (예: ESH-DHF-BCE01-SOP-R4)."""
+    if not filename or not isinstance(filename, str):
+        return None
+    base = os.path.splitext(os.path.basename(filename.strip()))[0]
+    if not base:
+        return None
+    if "_" not in base:
+        return None
+    head = base.split("_", 1)[0].strip()
+    return head or None
+
+
 def _build_swi_catalog_rows(model_code: str, all_docs: list, r_num: int | None) -> list:
     """표준작업지침서: 모델당 1행 (최신 R폴더 기준). 버전은 개정 내용 [버전 x.y] 우선, 없으면 R폴더명."""
     r_folder_label = f"R{r_num}" if r_num is not None else "—"
-    doc_num = f"{model_code} / {r_folder_label}" if r_num is not None else model_code
+    fallback_doc_num = f"{model_code} / {r_folder_label}" if r_num is not None else model_code
     if not all_docs:
         return [
             {
                 "model_name": model_code,
-                "document_number": doc_num,
+                "document_number": fallback_doc_num,
                 "document_title": "표준 작업 지침서",
                 "issue_revision_date": None,
                 "version": r_folder_label,
@@ -1189,6 +1634,8 @@ def _build_swi_catalog_rows(model_code: str, all_docs: list, r_num: int | None) 
     idate = _issued_date_from_docx_headers(fp)
     bracket_ver = _bracket_doc_version_from_revision_docx_path(fp)
     version_display = bracket_ver if bracket_ver else r_folder_label
+    prefix = _swi_document_number_prefix_from_filename(best.get("filename") or "")
+    doc_num = prefix if prefix else fallback_doc_num
     return [
         {
             "model_name": model_code,
@@ -1253,6 +1700,7 @@ def _instruction_swi_latest_payload(roots: list, env_hint_name: str) -> dict:
 
         for d in all_docs:
             d["swi_r_folder"] = r_num
+            d["modified_date"] = _iso_datetime_to_yyyy_mm_dd(d.get("modified") or "")
 
         catalog_rows = _build_swi_catalog_rows(sub, all_docs, r_num)
         payload = {
@@ -1288,6 +1736,254 @@ def _instruction_swi_latest_payload(roots: list, env_hint_name: str) -> dict:
     return out
 
 
+def _qmpc_accessible_base(root: str) -> tuple[str | None, list]:
+    """공정도 NAS 루트의 첫 접근 가능한 실제 경로."""
+    tried: list = []
+    for candidate in _win_path_access_variants(root):
+        tried.append(candidate)
+        try:
+            if os.path.isdir(candidate):
+                return os.path.normpath(candidate), tried
+        except OSError:
+            continue
+    if os.name == "nt":
+        names, _ = _win_dir_list_names_cmd(root)
+        if names is not None:
+            return os.path.normpath(root), tried + [root]
+    return None, tried
+
+
+def _qmpc_filename_matches_model(filename: str, model_code: str) -> bool:
+    """파일명에 모델(BCE01, BCE PP 등)이 포함되는지 (공정도 루트 평면 구조용)."""
+    mc = model_code.replace(" ", "").strip().upper()
+    compact = re.sub(r"\s+", "", filename.upper())
+    if f"({mc})" in compact:
+        return True
+    if mc == "BCEPP" and "BCEPP" in compact:
+        return True
+    # ESH-PC-BCE01은 ESH-PC-BCE010 등과 구분 (BCE01 뒤에 숫자가 이어지면 제외)
+    if re.search(rf"ESH-PC-{re.escape(mc)}(?![0-9])", compact):
+        return True
+    return False
+
+
+def _qmpc_collect_for_model(model_code: str, roots: list) -> dict:
+    """
+    모델별 xlsx 후보 수집.
+    (1) …/공정도/BCE01/R*/  (구형)
+    (2) …/공정도/R*/ 파일명에 모델 포함
+    (3) …/공정도/ 바로 아래 파일명에 모델 포함 (R폴더와 동급)
+    """
+    all_tried: list = []
+    hint = _instruction_nas_hint("QMPC_DOC_BASE")
+    folder, used_root, t1 = _resolve_instruction_subfolder(model_code, roots)
+    all_tried.extend(t1)
+    if folder:
+        r_path, r_num = _swi_latest_r_folder_path(folder)
+        if r_path and r_num is not None:
+            docs, _ad_err, _ad_msg = _scan_all_xlsx_in_folder(r_path)
+            if docs:
+                matched_legacy = [
+                    d for d in docs if _qmpc_filename_matches_model(d["filename"], model_code)
+                ]
+                if matched_legacy:
+                    for d in matched_legacy:
+                        d["qmpc_r_folder"] = r_num
+                        d["modified_date"] = _iso_datetime_to_yyyy_mm_dd(
+                            d.get("modified") or ""
+                        )
+                    return {
+                        "ok": True,
+                        "documents": matched_legacy,
+                        "r_path": r_path,
+                        "r_num": r_num,
+                        "base_folder": folder,
+                        "resolved_base": used_root,
+                        "tried_paths": list(all_tried),
+                        "layout": "legacy_model_r",
+                    }
+
+    for root in roots:
+        base, t2 = _qmpc_accessible_base(root)
+        all_tried.extend(t2)
+        if not base:
+            continue
+        r_path, r_num = _swi_latest_r_folder_path(base)
+        if r_path and r_num is not None:
+            docs_r, _e, _m = _scan_all_xlsx_in_folder(r_path)
+            if docs_r:
+                matched = [d for d in docs_r if _qmpc_filename_matches_model(d["filename"], model_code)]
+                if matched:
+                    for d in matched:
+                        d["qmpc_r_folder"] = r_num
+                        d["modified_date"] = _iso_datetime_to_yyyy_mm_dd(d.get("modified") or "")
+                    return {
+                        "ok": True,
+                        "documents": matched,
+                        "r_path": r_path,
+                        "r_num": r_num,
+                        "base_folder": base,
+                        "resolved_base": root,
+                        "tried_paths": list(all_tried),
+                        "layout": "root_r_named",
+                    }
+
+        docs0, _e0, _m0 = _scan_all_xlsx_in_folder(base)
+        if docs0:
+            matched0 = [d for d in docs0 if _qmpc_filename_matches_model(d["filename"], model_code)]
+            if matched0:
+                r_num_eff = r_num
+                r_path_eff = r_path
+                if r_num_eff is None:
+                    revs = [
+                        _max_revision_in_filename(d["filename"]) for d in matched0
+                    ]
+                    revs2 = [x for x in revs if x is not None]
+                    r_num_eff = max(revs2) if revs2 else None
+                if r_path_eff is None:
+                    r_path_eff = base
+                for d in matched0:
+                    d["qmpc_r_folder"] = r_num_eff
+                    d["modified_date"] = _iso_datetime_to_yyyy_mm_dd(d.get("modified") or "")
+                return {
+                    "ok": True,
+                    "documents": matched0,
+                    "r_path": r_path_eff,
+                    "r_num": r_num_eff,
+                    "base_folder": base,
+                    "resolved_base": root,
+                    "tried_paths": list(all_tried),
+                    "layout": "root_flat_named",
+                }
+
+    return {
+        "ok": False,
+        "error": "not_found",
+        "message": "품질관리 공정도 경로에 접근할 수 없거나, 해당 모델의 xlsx를 찾지 못했습니다.",
+        "tried_paths": list(all_tried),
+        "hint": hint,
+    }
+
+
+def _build_qmpc_catalog_rows(
+    model_code: str,
+    all_docs: list,
+    r_num: int | None,
+    qmpc_meta: dict | None = None,
+) -> list:
+    """품질관리 공정도: 모델당 1행. 문서번호는 엑셀 표지 ESH-PC-… 우선, 없으면 파일명 '_' 앞 접두."""
+    r_folder_label = f"R{r_num}" if r_num is not None else "—"
+    fallback_doc_num = f"{model_code} / {r_folder_label}" if r_num is not None else model_code
+    title = "품질관리 공정도"
+    meta = qmpc_meta or {}
+    if not all_docs:
+        return [
+            {
+                "model_name": model_code,
+                "document_number": fallback_doc_num,
+                "document_title": title,
+                "issue_revision_date": None,
+                "version": r_folder_label,
+                "matched_filename": None,
+            }
+        ]
+    best = max(all_docs, key=_doc_modified_timestamp)
+    excel_doc = (meta.get("document_number") or "").strip() or None
+    prefix = _swi_document_number_prefix_from_filename(best.get("filename") or "")
+    doc_num = excel_doc or (prefix if prefix else fallback_doc_num)
+    rev_no = meta.get("latest_revision_no")
+    if (
+        excel_doc
+        and rev_no is not None
+        and not re.search(r"-R\d+$", excel_doc, re.IGNORECASE)
+    ):
+        doc_num = f"{excel_doc}-R{rev_no}"
+    rev_from_excel = f"R{rev_no}" if rev_no is not None else None
+    version_label = rev_from_excel or r_folder_label
+    # 제/개정일은 엑셀 개정 이력 표만 사용 (파일 수정 시각 사용 안 함)
+    idate = meta.get("latest_revision_date")
+    return [
+        {
+            "model_name": model_code,
+            "document_number": doc_num,
+            "document_title": title,
+            "issue_revision_date": idate,
+            "version": version_label,
+            "matched_filename": best["filename"],
+        }
+    ]
+
+
+def _instruction_qmpc_latest_payload(roots: list, env_hint_name: str) -> dict:
+    """품질관리 공정도: BCE01 하위 또는 공정도 루트의 R*/평면 xlsx에서 모델명 매칭."""
+    out = {
+        "base": roots[0] if roots else "",
+        "roots_tried": roots,
+        "folders": {},
+        "layout": "qmpc_model_r_latest_xlsx",
+    }
+    hint = _instruction_nas_hint(env_hint_name)
+    for sub in MANUFACTURING_INSTRUCTION_SUBFOLDERS:
+        col = _qmpc_collect_for_model(sub, roots)
+        if not col.get("ok"):
+            out["folders"][sub] = {
+                "ok": False,
+                "error": col.get("error", "not_found"),
+                "message": col.get("message", "폴더에 접근할 수 없거나 존재하지 않습니다."),
+                "folder_path": (col.get("tried_paths") or [sub])[-1],
+                "tried_paths": col.get("tried_paths") or [],
+                "hint": col.get("hint") or hint,
+            }
+            continue
+
+        all_docs = col["documents"]
+        r_path = col["r_path"]
+        r_num = col["r_num"]
+        base_folder = col["base_folder"]
+        used_root = col["resolved_base"]
+        tried = col.get("tried_paths") or []
+
+        best_for_meta = max(all_docs, key=_doc_modified_timestamp) if all_docs else None
+        qmpc_meta = (
+            _qmpc_meta_from_xlsx(best_for_meta.get("full_path") or "")
+            if best_for_meta
+            else {}
+        )
+        catalog_rows = _build_qmpc_catalog_rows(sub, all_docs, r_num, qmpc_meta=qmpc_meta)
+        payload = {
+            "ok": True,
+            "folder_path": base_folder,
+            "qmpc_layout": col.get("layout"),
+            "qmpc_latest_r_path": r_path,
+            "qmpc_latest_r_revision": r_num,
+            "resolved_base": used_root,
+            "nas_folder_name": os.path.basename(base_folder),
+            "catalog_rows": catalog_rows,
+            "documents": all_docs,
+            "documents_count": len(all_docs),
+            "tried_paths": tried,
+        }
+        if all_docs and best_for_meta:
+            best = best_for_meta
+            payload["filename"] = best["filename"]
+            payload["full_path"] = best["full_path"]
+            payload["revision"] = r_num
+            payload["modified"] = best.get("modified")
+            for d in all_docs:
+                d["is_latest_in_folder"] = (
+                    d["filename"] == best["filename"]
+                    and d.get("full_path") == best.get("full_path")
+                )
+        else:
+            payload["revision"] = r_num
+            payload["filename"] = None
+            payload["full_path"] = None
+            payload["modified"] = None
+            payload["latest_note"] = "매칭된 .xlsx가 없습니다."
+        out["folders"][sub] = payload
+    return out
+
+
 # --- 공통 및 정적 파일 서버 ---
 @app.route('/')
 def index():
@@ -1315,6 +2011,13 @@ def api_manufacturing_instruction_latest():
 def api_standard_work_instruction_latest():
     """BCE01~BCEPP: 모델 폴더 내 R* 하위 중 최신 폴더의 표준작업지침서 .docx 1부."""
     out = _instruction_swi_latest_payload(_swi_root_candidates(), "SWI_DOC_BASE")
+    return jsonify(out)
+
+
+@app.route("/api/qmpc_latest")
+def api_qmpc_latest():
+    """BCE01~BCEPP: 품질관리 공정도 — 모델 폴더 내 R0/R1/… 최신 폴더의 .xlsx."""
+    out = _instruction_qmpc_latest_payload(_qmpc_root_candidates(), "QMPC_DOC_BASE")
     return jsonify(out)
 
 
@@ -1409,6 +2112,54 @@ def api_standard_work_instruction_revision_history():
     return _json_revision_history_response(fk, fn, path)
 
 
+@app.route("/api/qmpc_revision_history")
+def api_qmpc_revision_history():
+    """품질관리 공정도 xlsx 개정 이력 시트(Sheet1 우선) 그리드. Query: folder=BCE01&filename=....xlsx"""
+    fk = (request.args.get("folder") or "").strip()
+    fn = (request.args.get("filename") or "").strip()
+    if not fk or not fn:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "missing_params",
+                "message": "folder와 filename 파라미터가 필요합니다.",
+            }
+        ), 400
+    path = _safe_qmpc_xlsx_path(fk, fn)
+    if not path:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "not_found",
+                "message": "파일을 찾을 수 없거나 허용되지 않는 경로입니다.",
+            }
+        ), 404
+    grid = _xlsx_second_sheet_revision_grid(path)
+    err = grid.get("error")
+    if err:
+        msg_map = {
+            "not_found": "파일을 찾을 수 없습니다.",
+            "second_sheet_missing": "개정 이력 시트를 찾지 못했습니다.",
+            "revision_sheet_not_found": "개정 이력이 있는 시트를 찾지 못했습니다.",
+        }
+        msg = msg_map.get(err, "엑셀을 읽을 수 없습니다.")
+        if isinstance(err, str) and err.startswith("load_error:"):
+            msg = "엑셀 파일을 열 수 없습니다."
+        return jsonify({"ok": False, "error": err, "message": msg}), 400
+    return jsonify(
+        {
+            "ok": True,
+            "format": "sheet_grid",
+            "folder": fk,
+            "filename": fn,
+            "sheet_name": grid.get("sheet_name") or "",
+            "headers": grid.get("headers") or [],
+            "rows": grid.get("rows") or [],
+            "row_count": len(grid.get("rows") or []),
+        }
+    )
+
+
 def _instruction_diag_root_rows(roots: list) -> list:
     rows_out = []
     for root in roots:
@@ -1464,6 +2215,24 @@ def api_standard_work_instruction_diag():
         except Exception as e:
             out["z_drive_error"] = str(e)
     out["roots"] = _instruction_diag_root_rows(_swi_root_candidates())
+    return jsonify(out)
+
+
+@app.route("/api/qmpc_diag")
+def api_qmpc_diag():
+    """품질관리 공정도 NAS 루트 연결 진단 (JSON)."""
+    import ctypes
+
+    out = {"kind": "qmpc", "z_drive_type": None, "z_drive_label": None, "roots": []}
+    if os.name == "nt":
+        try:
+            t = ctypes.windll.kernel32.GetDriveTypeW("Z:\\")
+            labels = {0: "UNKNOWN", 1: "NO_ROOT", 2: "REMOVABLE", 3: "FIXED", 4: "REMOTE", 5: "CDROM", 6: "RAMDISK"}
+            out["z_drive_type"] = t
+            out["z_drive_label"] = labels.get(t, str(t))
+        except Exception as e:
+            out["z_drive_error"] = str(e)
+    out["roots"] = _instruction_diag_root_rows(_qmpc_root_candidates())
     return jsonify(out)
 
 
