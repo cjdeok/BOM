@@ -25,6 +25,9 @@
                 <div :class="['sidebar-nav-item', { active: currentTab === 'viewer' }]" @click="currentTab = 'viewer'">
                     <i class="fas fa-search"></i> <span>BOM 조회</span>
                 </div>
+                <div :class="['sidebar-nav-item', { active: currentTab === 'bom-tree' }]" @click="currentTab = 'bom-tree'">
+                    <i class="fas fa-diagram-project"></i> <span>BOM Tree</span>
+                </div>
                 <div :class="['sidebar-nav-item', { active: currentTab === 'upload-bom' }]" @click="currentTab = 'upload-bom'">
                     <i class="fas fa-clipboard-list"></i> <span>제조지시 실행</span>
                 </div>
@@ -92,6 +95,9 @@
                                 </button>
                                 <button class="btn btn-outline" style="padding: 6px 14px; font-size: 0.8rem;" @click="showRawModal = true">
                                     <i class="fas fa-flask"></i> 원재료 합계
+                                </button>
+                                <button type="button" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.8rem;" :disabled="!selectedViewLot" @click="currentTab = 'bom-tree'">
+                                    <i class="fas fa-diagram-project"></i> BOM Tree
                                 </button>
                             </div>
                         </div>
@@ -173,8 +179,8 @@
                                         </div>
                                     </template>
 
-                                    <!-- Level 3 테이블 -->
-                                    <template v-if="getL3SubItems(getL2SubItems(l1['Lot No.'])).length > 0">
+                                    <!-- Level 3 테이블 (viewDepth ≥ 3일 때만) -->
+                                    <template v-if="viewDepth >= 3 && getL3SubItems(getL2SubItems(l1['Lot No.'])).length > 0">
                                         <div class="sub-table-label l3-label">
                                             Level 3 하위 원재료
                                         </div>
@@ -207,6 +213,85 @@
                                     </template>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- TAB: BOM Tree (Level 0 → 3) -->
+        <div v-if="currentTab === 'bom-tree'">
+            <div v-if="isViewLoading" class="loading-spinner">
+                <div class="spinner"></div>
+                <p>데이터베이스에서 정보를 불러오고 있습니다...</p>
+            </div>
+            <template v-else>
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div class="section-title">
+                            <i class="fas fa-diagram-project" style="color: var(--primary);"></i>
+                            <span>BOM Tree</span>
+                            <span class="section-subtitle" style="margin-left: 10px; font-weight: 400;">Level 0 → 3 · SVG 트리 (최대 500% 확대)</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                            <button type="button" class="btn btn-outline" @click="loadViewerData">
+                                <i class="fas fa-sync-alt"></i> 데이터 새로고침
+                            </button>
+                            <button type="button" class="btn btn-outline" @click="renderMindmapDiagram" :disabled="mindmapLoading || !selectedViewLot">
+                                <i class="fas fa-redo"></i> 다시 그리기
+                            </button>
+                            <button type="button" class="btn btn-outline" @click="fitBomTreeToView" :disabled="!mindmapSvgHtml || mindmapLoading">
+                                <i class="fas fa-compress"></i> 화면에 맞춤
+                            </button>
+                            <button type="button" class="btn btn-outline" @click="resetBomTreeZoom" :disabled="!mindmapSvgHtml">
+                                <i class="fas fa-rotate-left"></i> 보기 초기화
+                            </button>
+                            <span v-if="mindmapSvgHtml" class="bom-tree-zoom-badge">{{ bomTreeZoomPercent }}%</span>
+                            <button type="button" class="btn btn-primary" style="padding: 8px 16px;" @click="currentTab = 'viewer'">
+                                <i class="fas fa-search"></i> BOM 조회로 이동
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="bom-tree-help">
+                            모델(제품코드)별 LOT을 선택하면 L0~L3가 <strong>직각 연결선</strong> 트리로 표시됩니다. 처음에는 <strong>화면에 맞춤</strong>으로 전체가 보이도록 축소됩니다(최대 100%). <strong>화면에 맞춤</strong> 버튼으로 언제든 다시 맞출 수 있고, <strong>보기 초기화</strong>는 100%·이동 초기화입니다. <strong>마우스 휠</strong>로 25%~500% 확대·축소, <strong>드래그</strong>로 이동, 스크롤바로도 이동 가능합니다.
+                        </p>
+                        <div class="form-group" style="margin-bottom: 8px; max-width: 560px;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-main);">모델 · LOT</label>
+                            <select :value="selectedViewLot" @change="onMindmapLotChange($event)" class="bom-tree-select">
+                                <template v-for="grp in viewerLotsByModel" :key="grp.modelKey">
+                                    <optgroup :label="grp.modelKey">
+                                        <option v-for="lo in grp.lots" :key="lo" :value="lo">{{ lo }}</option>
+                                    </optgroup>
+                                </template>
+                            </select>
+                        </div>
+                        <div v-if="!selectedViewLot && !(viewData.level0 && viewData.level0.length)" class="bom-tree-empty">
+                            등록된 Level 0 데이터가 없습니다. 「제조지시 실행」에서 저장하거나 DB를 확인해 주세요.
+                        </div>
+                        <div
+                            v-else
+                            ref="bomTreeCanvasRef"
+                            class="bom-tree-canvas"
+                            :class="{ 'bom-tree-canvas--grabbing': bomTreePanning }"
+                            @wheel="onBomTreeWheel"
+                            @pointerdown.prevent="onBomTreePointerDown"
+                            @pointermove="onBomTreePointerMove"
+                            @pointerup="onBomTreePointerUp"
+                            @pointercancel="onBomTreePointerUp"
+                        >
+                            <div v-if="mindmapLoading" class="bom-tree-loading">
+                                <i class="fas fa-spinner fa-spin"></i> 다이어그램을 그리는 중…
+                            </div>
+                            <p v-else-if="mindmapError" class="bom-tree-error">{{ mindmapError }}</p>
+                            <div v-else-if="mindmapSvgHtml" class="bom-tree-zoom-root">
+                                <div class="bom-tree-zoom-slot" :style="bomTreeSlotStyle">
+                                    <div class="bom-tree-zoom-inner" :style="bomTreeInnerStyle">
+                                        <div class="bom-tree-svg" v-html="mindmapSvgHtml"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="bom-tree-placeholder">LOT을 선택하면 트리가 표시됩니다.</p>
                         </div>
                     </div>
                 </div>

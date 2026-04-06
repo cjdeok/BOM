@@ -1,8 +1,8 @@
-const { createApp, ref, computed, onMounted, reactive, watch } = Vue;
+const { createApp, ref, computed, onMounted, reactive, watch, nextTick } = Vue;
 
 createApp({
     setup() {
-        const currentTab = ref('upload-bom');
+        const currentTab = ref('viewer');
 
         // =============================================
         // BOM Viewer State
@@ -45,6 +45,7 @@ createApp({
         const breadcrumbLabel = computed(() => {
             const labels = {
                 viewer: 'BOM 조회',
+                'bom-tree': 'BOM Tree',
                 'upload-bom': '제조지시 실행',
                 history: '제조지시 기록',
                 'mi-manage': '제조지침서 관리'
@@ -1217,6 +1218,359 @@ createApp({
         };
 
         const filteredInstructions = computed(() => viewData.value.instruction_summary.filter(i => i['상위Lot'] === selectedViewLot.value));
+
+        const viewerLotsByModel = computed(() => {
+            const rows = viewData.value.level0 || [];
+            const m = new Map();
+            rows.forEach((row) => {
+                const lot = row['LOT NO.'];
+                if (!lot) return;
+                const modelKey = String(row['제품코드'] || row['제품명'] || '기타').trim() || '기타';
+                if (!m.has(modelKey)) m.set(modelKey, []);
+                const arr = m.get(modelKey);
+                if (!arr.includes(lot)) arr.push(lot);
+            });
+            return Array.from(m.entries())
+                .map(([modelKey, lots]) => ({
+                    modelKey,
+                    lots: lots.slice().sort((a, b) => String(b).localeCompare(String(a)))
+                }))
+                .sort((a, b) => a.modelKey.localeCompare(b.modelKey));
+        });
+
+        const escapeMindmapLabel = (s, maxLen = 52) => {
+            let t = String(s ?? '')
+                .replace(/[#|[\](){}]/g, ' ')
+                .replace(/["`]/g, "'")
+                .replace(/\r?\n/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (t.length > maxLen) t = `${t.slice(0, Math.max(0, maxLen - 1))}…`;
+            return t || '—';
+        };
+
+        const escapeXml = (s) => String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        /** BOM Tree: 코드번호 + 명칭만, 레벨별 색 (순수 SVG) */
+        const buildBomTreeSvgString = () => {
+            const lot = selectedViewLot.value;
+            if (!lot) return '';
+
+            const NODE_W = 124;
+            const NODE_H = 64;
+            const PAD = 28;
+            const LEVEL_GAP = 44;
+            const SIB_GAP = 18;
+            const NODE_RX = 4;
+            const LINE = '#94a3b8';
+            const LEVEL_STYLE = [
+                { fill: '#4f46e5', stroke: '#312e81' },
+                { fill: '#2563eb', stroke: '#1e40af' },
+                { fill: '#059669', stroke: '#065f46' },
+                { fill: '#d97706', stroke: '#92400e' }
+            ];
+
+            const l0 = viewData.value.level0.find((i) => i['LOT NO.'] === lot);
+            const l0Code = escapeMindmapLabel(l0?.['제품코드'] || lot, 16);
+            const l0Name = escapeMindmapLabel(l0?.['제품명'] || '완제품', 22);
+
+            const root = {
+                code: l0Code,
+                name: l0Name,
+                children: []
+            };
+
+            const l1Raw = viewData.value.level1.filter((i) => i['상위Lot'] === lot);
+            const l1Grouped = groupItems(l1Raw, ['코드번호', '구성품 명칭'], ['Lot No.', '제조일자', '유효기간', '포장시 요구량'], ['포장시 요구량']);
+
+            l1Grouped.forEach((row) => {
+                const n1 = {
+                    code: escapeMindmapLabel(row['코드번호'] || '', 16),
+                    name: escapeMindmapLabel(row['구성품 명칭'] || '', 22),
+                    children: []
+                };
+                root.children.push(n1);
+                const l2s = getL2SubItems(row['Lot No.']);
+                l2s.forEach((l2) => {
+                    const n2 = {
+                        code: escapeMindmapLabel(l2['코드번호'] || '', 16),
+                        name: escapeMindmapLabel(l2['원재료명'] || '', 22),
+                        children: []
+                    };
+                    n1.children.push(n2);
+                    getL3SubItems([l2]).forEach((l3) => {
+                        n2.children.push({
+                            code: escapeMindmapLabel(l3['코드번호'] || '', 16),
+                            name: escapeMindmapLabel(l3['원재료명'] || '', 22),
+                            children: []
+                        });
+                    });
+                });
+            });
+
+            const measureSubtreeWidth = (node) => {
+                if (!node.children.length) {
+                    node.subtreeW = NODE_W;
+                    return NODE_W;
+                }
+                let sum = 0;
+                node.children.forEach((c, i) => {
+                    sum += measureSubtreeWidth(c);
+                    if (i < node.children.length - 1) sum += SIB_GAP;
+                });
+                node.subtreeW = Math.max(NODE_W, sum);
+                return node.subtreeW;
+            };
+
+            const assignPositions = (node, depth, leftX) => {
+                node.depth = depth;
+                node.y = PAD + depth * (NODE_H + LEVEL_GAP);
+                if (!node.children.length) {
+                    node.x = leftX + (node.subtreeW - NODE_W) / 2;
+                    return;
+                }
+                let cur = leftX;
+                node.children.forEach((c) => {
+                    assignPositions(c, depth + 1, cur);
+                    cur += c.subtreeW + SIB_GAP;
+                });
+                const c0 = node.children[0];
+                const ck = node.children[node.children.length - 1];
+                const mid = (c0.x + NODE_W / 2 + ck.x + NODE_W / 2) / 2;
+                node.x = mid - NODE_W / 2;
+            };
+
+            const maxDepth = (node, d = 0) => {
+                if (!node.children.length) return d;
+                return Math.max(...node.children.map((c) => maxDepth(c, d + 1)));
+            };
+
+            measureSubtreeWidth(root);
+            assignPositions(root, 0, PAD);
+
+            const totalW = Math.ceil(PAD + root.subtreeW + PAD);
+            const dmax = maxDepth(root);
+            const totalH = Math.ceil(PAD + (dmax + 1) * NODE_H + dmax * LEVEL_GAP + PAD);
+
+            const orthPath = (p, c) => {
+                const px = p.x + NODE_W / 2;
+                const py = p.y + NODE_H;
+                const cx = c.x + NODE_W / 2;
+                const cy = c.y;
+                const midY = py + (cy - py) / 2;
+                return `M${px},${py} L${px},${midY} L${cx},${midY} L${cx},${cy}`;
+            };
+
+            const edges = [];
+            const walkE = (node) => {
+                node.children.forEach((c) => {
+                    edges.push(orthPath(node, c));
+                    walkE(c);
+                });
+            };
+            walkE(root);
+
+            const nodes = [];
+            const walkN = (node) => {
+                nodes.push(node);
+                node.children.forEach(walkN);
+            };
+            walkN(root);
+
+            const textBlock = (node) => {
+                const cx = node.x + NODE_W / 2;
+                const y0 = node.y + 22;
+                const tc = escapeXml(node.code);
+                const tn = escapeXml(node.name);
+                return `<text x="${cx}" y="${y0}" text-anchor="middle" fill="#ffffff" font-family="Inter,system-ui,&quot;Segoe UI&quot;,&quot;Malgun Gothic&quot;,sans-serif"><tspan x="${cx}" dy="0" font-size="12" font-weight="700">${tc}</tspan><tspan x="${cx}" dy="16" font-size="10.5" font-weight="600">${tn}</tspan></text>`;
+            };
+
+            const rects = nodes.map((n) => {
+                const st = LEVEL_STYLE[Math.min(n.depth | 0, LEVEL_STYLE.length - 1)];
+                return `<rect x="${n.x}" y="${n.y}" width="${NODE_W}" height="${NODE_H}" rx="${NODE_RX}" ry="${NODE_RX}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="1.2"/>`;
+            }).join('');
+            const paths = edges.map((d) =>
+                `<path d="${d}" fill="none" stroke="${LINE}" stroke-width="1.8" stroke-linejoin="miter"/>`
+            ).join('');
+            const texts = nodes.map(textBlock).join('');
+
+            return `<svg class="bom-tree-chart" xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" shape-rendering="geometricPrecision" text-rendering="geometricPrecision" style="background:#ffffff">${rects}${paths}${texts}</svg>`;
+        };
+
+        const mindmapSvgHtml = ref('');
+        const mindmapError = ref('');
+        const mindmapLoading = ref(false);
+
+        const bomTreeCanvasRef = ref(null);
+        const bomTreeSvgNatural = ref({ w: 0, h: 0 });
+        const bomTreeZoom = ref(1);
+        const BOM_TREE_ZOOM_MIN = 0.25;
+        const BOM_TREE_ZOOM_MAX = 5;
+
+        const refreshBomTreeSvgSize = () => {
+            const root = bomTreeCanvasRef.value;
+            if (!root) return;
+            const svg = root.querySelector('.bom-tree-svg svg');
+            if (!svg) {
+                bomTreeSvgNatural.value = { w: 0, h: 0 };
+                return;
+            }
+            const r = svg.getBoundingClientRect();
+            const w = r.width || parseFloat(svg.getAttribute('width')) || 0;
+            const h = r.height || parseFloat(svg.getAttribute('height')) || 0;
+            if (w > 0 && h > 0) bomTreeSvgNatural.value = { w, h };
+        };
+
+        const bomTreeSlotStyle = computed(() => {
+            const { w, h } = bomTreeSvgNatural.value;
+            const z = bomTreeZoom.value;
+            if (!w || !h) return { minHeight: '400px', width: '100%' };
+            return {
+                width: `${Math.ceil(w * z)}px`,
+                height: `${Math.ceil(h * z)}px`,
+                margin: '0 auto'
+            };
+        });
+
+        const bomTreePanX = ref(0);
+        const bomTreePanY = ref(0);
+        const bomTreePanning = ref(false);
+        let _bomTreePanDrag = { sx: 0, sy: 0, ox: 0, oy: 0 };
+
+        const bomTreeInnerStyle = computed(() => {
+            const { w, h } = bomTreeSvgNatural.value;
+            const z = bomTreeZoom.value;
+            const px = bomTreePanX.value;
+            const py = bomTreePanY.value;
+            const base = !w || !h ? {} : { width: `${w}px`, height: `${h}px` };
+            return {
+                ...base,
+                transform: `translate(${px}px, ${py}px) scale(${z})`,
+                transformOrigin: 'top left'
+            };
+        });
+
+        const bomTreeZoomPercent = computed(() => Math.round(bomTreeZoom.value * 100));
+
+        const onBomTreeWheel = (e) => {
+            if (!mindmapSvgHtml.value || mindmapLoading.value) return;
+            e.preventDefault();
+            const next = bomTreeZoom.value * Math.exp(-e.deltaY * 0.0018);
+            bomTreeZoom.value = Math.min(BOM_TREE_ZOOM_MAX, Math.max(BOM_TREE_ZOOM_MIN, next));
+        };
+
+        const resetBomTreeZoom = () => {
+            bomTreeZoom.value = 1;
+            bomTreePanX.value = 0;
+            bomTreePanY.value = 0;
+        };
+
+        /** 캔버스 안에 트리 전체가 들어가도록 줌(최대 100%, 최소 25%) */
+        const fitBomTreeToView = () => {
+            const canvas = bomTreeCanvasRef.value;
+            const { w, h } = bomTreeSvgNatural.value;
+            if (!canvas || !w || !h || !mindmapSvgHtml.value) return;
+            const cs = getComputedStyle(canvas);
+            const pt = parseFloat(cs.paddingTop) || 0;
+            const pr = parseFloat(cs.paddingRight) || 0;
+            const pb = parseFloat(cs.paddingBottom) || 0;
+            const pl = parseFloat(cs.paddingLeft) || 0;
+            if (canvas.clientWidth < 80 || canvas.clientHeight < 80) return;
+            const fudge = 6;
+            const availW = Math.max(48, canvas.clientWidth - pl - pr - fudge);
+            const availH = Math.max(48, canvas.clientHeight - pt - pb - fudge);
+            const raw = Math.min(availW / w, availH / h);
+            const z = Math.min(BOM_TREE_ZOOM_MAX, Math.max(BOM_TREE_ZOOM_MIN, Math.min(raw, 1)));
+            bomTreeZoom.value = z;
+            bomTreePanX.value = 0;
+            bomTreePanY.value = 0;
+        };
+
+        const onBomTreePointerDown = (e) => {
+            if (!mindmapSvgHtml.value || mindmapLoading.value) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            bomTreePanning.value = true;
+            _bomTreePanDrag = {
+                sx: e.clientX,
+                sy: e.clientY,
+                ox: bomTreePanX.value,
+                oy: bomTreePanY.value
+            };
+            try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+            } catch (_) { /* ignore */ }
+        };
+
+        const onBomTreePointerMove = (e) => {
+            if (!bomTreePanning.value) return;
+            bomTreePanX.value = _bomTreePanDrag.ox + (e.clientX - _bomTreePanDrag.sx);
+            bomTreePanY.value = _bomTreePanDrag.oy + (e.clientY - _bomTreePanDrag.sy);
+        };
+
+        const onBomTreePointerUp = (e) => {
+            if (!bomTreePanning.value) return;
+            bomTreePanning.value = false;
+            try {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+            } catch (_) { /* ignore */ }
+        };
+
+        const renderMindmapDiagram = async () => {
+            mindmapLoading.value = true;
+            mindmapError.value = '';
+            mindmapSvgHtml.value = '';
+            try {
+                const svg = buildBomTreeSvgString();
+                if (!svg) {
+                    mindmapError.value = 'LOT를 선택하거나 데이터를 불러온 뒤 다시 시도해 주세요.';
+                    return;
+                }
+                mindmapSvgHtml.value = svg;
+            } catch (err) {
+                mindmapError.value = String(err && err.message ? err.message : err);
+            } finally {
+                mindmapLoading.value = false;
+            }
+        };
+
+        const onMindmapLotChange = (e) => {
+            const v = e.target.value;
+            if (!v) return;
+            selectViewLot(v);
+        };
+
+        watch([currentTab, isViewLoading], async ([tab, loading]) => {
+            if (tab !== 'bom-tree' || loading) return;
+            await nextTick();
+            await renderMindmapDiagram();
+        });
+
+        watch(selectedViewLot, async () => {
+            if (currentTab.value !== 'bom-tree') return;
+            await nextTick();
+            await renderMindmapDiagram();
+        });
+
+        watch(mindmapSvgHtml, async (html) => {
+            bomTreeZoom.value = 1;
+            bomTreePanX.value = 0;
+            bomTreePanY.value = 0;
+            bomTreePanning.value = false;
+            bomTreeSvgNatural.value = { w: 0, h: 0 };
+            if (!html) return;
+            await nextTick();
+            requestAnimationFrame(() => {
+                refreshBomTreeSvgSize();
+                requestAnimationFrame(() => {
+                    refreshBomTreeSvgSize();
+                    fitBomTreeToView();
+                });
+            });
+        });
         
         const aggregatedMaterials = computed(() => {
             const l1Items = viewData.value.level1.filter(i => i['상위Lot'] === selectedViewLot.value);
@@ -1359,6 +1713,11 @@ createApp({
             filteredL1, isOpen, toggleOpen, hasChildren, getL2SubItems, getL3SubItems, splitLines,
             showSemiModal, showRawModal, filteredInstructions, aggregatedMaterials,
             viewDepth, setViewDepth,
+            mindmapSvgHtml, mindmapError, mindmapLoading,
+            viewerLotsByModel, renderMindmapDiagram, onMindmapLotChange,
+            bomTreeCanvasRef, bomTreeSlotStyle, bomTreeInnerStyle, bomTreeZoomPercent,
+            bomTreePanning, onBomTreeWheel, resetBomTreeZoom, fitBomTreeToView,
+            onBomTreePointerDown, onBomTreePointerMove, onBomTreePointerUp,
             // CSV Upload Tab
             miLatestLoading, miLatestError, miLatestResult, swiLatestError, swiLatestResult,
             qmpcLatestError, qmpcLatestResult,

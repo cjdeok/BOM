@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-2 -2 36 36" fill="none">
+  <!-- 바깥 검정 테두리(윤곽) -->
+  <path stroke="#000000" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" fill="none"
+    d="M9 21v-9.5c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v6c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v-7c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v9c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v-4c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v6.5c0 2.2-1.7 4-3.9 4H12.5C10.3 25 9 23.2 9 21z"/>
+  <!-- 안쪽 흰 손 + 검정 선 -->
+  <path fill="#ffffff" stroke="#000000" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+    d="M9 21v-9.5c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v6c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v-7c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v9c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v-4c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8v6.5c0 2.2-1.7 4-3.9 4H12.5C10.3 25 9 23.2 9 21z"/>
+</svg>

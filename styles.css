@@ -429,6 +429,35 @@ tr:last-child td { border-bottom: none; }
 .modal-header { padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #F9FAFB; }
 .modal-body { padding: 12px 20px; overflow-y: auto; }
 
+.bom-tree-help { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 16px 0; line-height: 1.55; max-width: 800px; }
+.bom-tree-select { width: 100%; max-width: 560px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.85rem; background: #fff; }
+.bom-tree-empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 0; }
+.bom-tree-canvas { min-height: min(62vh, 640px); max-height: min(72vh, 800px); overflow: auto; text-align: center; padding: 20px 12px 28px; background: #FAFBFC; border-radius: 12px; border: 1px solid var(--border); margin-top: 12px; touch-action: none; user-select: none; -webkit-user-select: none; /* 흰 채움 + 검정 테두리 손 모양 */ cursor: url('/bom-tree-cursor-grab.svg?v=2') 14 20, grab; }
+.bom-tree-canvas.bom-tree-canvas--grabbing { cursor: url('/bom-tree-cursor-grabbing.svg?v=2') 14 14, grabbing; }
+.bom-tree-loading { padding: 48px 16px; color: var(--text-muted); }
+.bom-tree-error { color: #b91c1c; font-size: 0.9rem; text-align: left; padding: 12px 16px; }
+.bom-tree-placeholder { color: var(--text-muted); padding: 40px 16px; }
+.bom-tree-zoom-badge { font-size: 0.78rem; font-weight: 700; color: var(--primary-dark); padding: 6px 12px; background: var(--primary-light); border-radius: 8px; border: 1px solid #C7D2FE; white-space: nowrap; }
+.bom-tree-zoom-root { width: 100%; }
+.bom-tree-zoom-inner .bom-tree-svg { display: block; min-width: 0; }
+/* SVG 벡터 텍스트: 확대 시에도 윤곽 유지 (HTML 라벨 대비) */
+.bom-tree-zoom-inner .bom-tree-svg svg {
+    max-width: none;
+    width: auto;
+    height: auto;
+    display: block;
+    vertical-align: top;
+    shape-rendering: geometricPrecision;
+    text-rendering: geometricPrecision;
+}
+.bom-tree-zoom-inner .bom-tree-svg svg text,
+.bom-tree-zoom-inner .bom-tree-svg svg tspan {
+    shape-rendering: geometricPrecision;
+    text-rendering: geometricPrecision;
+}
+.bom-tree-svg { display: inline-block; min-width: min(100%, 480px); }
+.bom-tree-svg svg { max-width: 100%; height: auto; vertical-align: top; }
+
 /* =========================================
    Upload Zone
    ========================================= */

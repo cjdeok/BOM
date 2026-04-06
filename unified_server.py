@@ -1732,7 +1732,9 @@ def _qmpc_accessible_base(root: str) -> tuple[str | None, list]:
     """공정도 NAS 루트의 첫 접근 가능한 실제 경로."""
     tried: list = []
     for candidate in _win_path_access_variants(root):
-        tried.append(candidate)
+        # 시도한 경로(UI): 탐색기 주소줄에 나오는 형태만 표시 (\\?\ 확장 경로 제외)
+        if os.name != "nt" or not candidate.startswith("\\\\?\\"):
+            tried.append(candidate)
         try:
             if os.path.isdir(candidate):
                 return os.path.normpath(candidate), tried
@@ -2015,6 +2017,16 @@ def serve_css():
 @app.route('/app.js')
 def serve_js():
     return send_from_directory('.', 'app.js')
+
+
+@app.route('/bom-tree-cursor-grab.svg')
+def serve_bom_tree_cursor_grab():
+    return send_from_directory(ROOT_DIR, 'bom-tree-cursor-grab.svg', mimetype='image/svg+xml')
+
+
+@app.route('/bom-tree-cursor-grabbing.svg')
+def serve_bom_tree_cursor_grabbing():
+    return send_from_directory(ROOT_DIR, 'bom-tree-cursor-grabbing.svg', mimetype='image/svg+xml')
 
 
 @app.route('/api/manufacturing_instruction_latest')
@@ -3532,7 +3544,16 @@ def save_instruction():
 
 
 if __name__ == '__main__':
+    import threading
+    import webbrowser
+
+    _listen_url = "http://127.0.0.1:9000"
     print("--- Unified BOM System Server Starting ---")
+    print(f"접속 주소: {_listen_url}")
+    print("페이지가 자동으로 안 열리면 위 주소를 Chrome/Edge 주소창에 붙여 넣으세요. (https 가 아니라 http 입니다)")
+    # BOM_NO_BROWSER=1 이면 자동 실행 안 함 (리로더 이중 실행 방지용으로도 사용 가능)
+    if not os.environ.get("BOM_NO_BROWSER", "").strip():
+        threading.Timer(1.25, lambda: webbrowser.open(_listen_url)).start()
     # Windows: debug 리로더 자식 프로세스에서 Z: 등 네트워크 드라이브가 사라지는 경우가 있어 기본 비활성화.
     _reload = os.environ.get("BOM_USE_RELOADER", "").strip().lower() in ("1", "true", "yes", "y")
     app.run(host="0.0.0.0", port=9000, debug=True, use_reloader=_reload)
